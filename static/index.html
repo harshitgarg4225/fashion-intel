@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f2ea">
+<title>Stylist — your AI shopping assistant</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">✦</span>
+    <h1>Stylist</h1>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="chat" role="tab">Chat</button>
+    <button class="tab" data-tab="saved" role="tab">Saved <span id="savedCount" class="count" hidden></span></button>
+  </nav>
+  <div class="topbar-actions">
+    <button id="newChatBtn" class="icon-btn" title="New chat" aria-label="New chat">＋</button>
+    <button id="profileBtn" class="icon-btn" title="Edit style profile" aria-label="Edit style profile">☰</button>
+  </div>
+</header>
+
+<main id="chatPanel" class="panel active">
+  <div id="messages" class="messages" aria-live="polite"></div>
+
+  <div id="emptyState" class="empty-state">
+    <p class="empty-kicker">Your personal stylist</p>
+    <h2>What are we<br><em>dressing for?</em></h2>
+    <div class="starter-grid">
+      <button class="starter" data-q="Style me a smart-casual office look for this week's weather">Office look for this week ☔</button>
+      <button class="starter" data-q="I have a date this weekend — put together something effortless but sharp">Weekend date night ✨</button>
+      <button class="starter" data-q="Build me a 5-piece travel capsule that all mixes and matches">Travel capsule ✈️</button>
+      <button class="starter" data-q="I'm attending a wedding as a guest — what should I wear?">Wedding guest 💍</button>
+      <button class="starter" data-q="Refresh my basics under a tight budget — what are the essential pieces?">Budget basics refresh 💸</button>
+      <button class="starter" data-q="Find me versatile white sneakers that go with everything">Perfect white sneakers 👟</button>
+    </div>
+  </div>
+
+  <div class="composer-wrap">
+    <div id="chips" class="chips"></div>
+    <form id="composer" class="composer">
+      <textarea id="input" rows="1" placeholder="Ask your stylist anything…" enterkeyhint="send"></textarea>
+      <button id="sendBtn" type="submit" class="send-btn" aria-label="Send">↑</button>
+      <button id="stopBtn" type="button" class="send-btn stop" aria-label="Stop" hidden>■</button>
+    </form>
+    <p class="fineprint">Links open retailer searches — prices &amp; stock live on the store.</p>
+  </div>
+</main>
+
+<main id="savedPanel" class="panel">
+  <div id="savedList" class="saved-list"></div>
+  <div id="savedEmpty" class="empty-state small">
+    <h2>Nothing saved <em>yet</em></h2>
+    <p class="muted">Tap the ♡ on any look card to keep it here.</p>
+  </div>
+</main>
+
+<!-- Onboarding / profile modal -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-card">
+    <p class="empty-kicker">Style profile</p>
+    <h2>Make it <em>yours</em></h2>
+    <p class="muted">30 seconds — your stylist uses this to tailor every look. Everything stays on your device.</p>
+    <form id="profileForm">
+      <label class="field">
+        <span>Shopping for</span>
+        <div class="pill-row" data-name="gender">
+          <button type="button" class="pill" data-v="menswear">Menswear</button>
+          <button type="button" class="pill" data-v="womenswear">Womenswear</button>
+          <button type="button" class="pill" data-v="anything that fits my vibe">No preference</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>Region</span>
+        <div class="pill-row" data-name="region">
+          <button type="button" class="pill" data-v="India">India</button>
+          <button type="button" class="pill" data-v="United States">US</button>
+          <button type="button" class="pill" data-v="United Kingdom">UK</button>
+          <button type="button" class="pill" data-v="Other / Global">Other</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>Budget feel</span>
+        <div class="pill-row" data-name="budget">
+          <button type="button" class="pill" data-v="budget-friendly, value first">Savvy</button>
+          <button type="button" class="pill" data-v="mid-range, quality basics">Mid-range</button>
+          <button type="button" class="pill" data-v="premium, invest in pieces">Premium</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>Your vibe <small>(pick any)</small></span>
+        <div class="pill-row multi" data-name="style">
+          <button type="button" class="pill" data-v="clean minimalist">Minimalist</button>
+          <button type="button" class="pill" data-v="smart casual">Smart casual</button>
+          <button type="button" class="pill" data-v="streetwear">Streetwear</button>
+          <button type="button" class="pill" data-v="old money / quiet luxury">Quiet luxury</button>
+          <button type="button" class="pill" data-v="athleisure">Athleisure</button>
+          <button type="button" class="pill" data-v="ethnic / fusion">Ethnic&nbsp;fusion</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>Anything else? <small>(fit, sizes, colors you avoid…)</small></span>
+        <input type="text" id="notesInput" placeholder="e.g. slim fit, size M, no bright yellow" maxlength="180">
+      </label>
+      <button type="submit" class="primary-btn">Start styling</button>
+    </form>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
