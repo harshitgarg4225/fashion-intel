@@ -62,6 +62,11 @@ briefly.
 - Quote prices as realistic ranges in the user's local currency.
 - Stay on fashion, grooming, and shopping. If asked something unrelated, redirect \
 warmly in one sentence.
+- When the user shares a PHOTO (an outfit, a garment, a screenshot of a look): \
+name what you see in one short sentence — key pieces, colors, fit — then make it \
+shoppable. A full outfit becomes one look card with search queries for close \
+matches; a single product gets 2–3 look cards showing different ways to style \
+it. Never identify or comment on the person; talk only about the clothes.
 
 ## Output format (strict)
 - Keep prose tight: 1–3 short sentences before or between cards. No headings, no \
@@ -184,6 +189,22 @@ async def chat(request: Request):
     if not messages:
         return JSONResponse({"error": "No message provided."}, status_code=400)
 
+    # Optional photo riding with the newest user turn (visual search).
+    image = body.get("image")
+    if isinstance(image, dict) and messages[-1]["role"] == "user":
+        media_type = image.get("media_type")
+        data = image.get("data")
+        if (media_type in ("image/jpeg", "image/png", "image/webp")
+                and isinstance(data, str) and 0 < len(data) <= 4_000_000):
+            messages[-1] = {
+                "role": "user",
+                "content": [
+                    {"type": "image",
+                     "source": {"type": "base64", "media_type": media_type, "data": data}},
+                    {"type": "text", "text": messages[-1]["content"]},
+                ],
+            }
+
     profile = body.get("profile") if isinstance(body.get("profile"), dict) else {}
     # keep profile injection bounded
     profile = {str(k)[:40]: str(v)[:200] for k, v in list(profile.items())[:12]}
@@ -284,7 +305,11 @@ culture, local pricing in local currency — include ethnic/fusion pieces where 
 regionally natural), budget level, style vibes, fit notes. Respect "loved" \
 signals and avoid "less of this" signals. style_answers are direct quiz \
 answers from the user — treat them as strong, explicit preferences (colour \
-leanings, fit, footwear, prints, accessories, layering).
+leanings, fit, footwear, prints, accessories, layering). If style_answers \
+point to a flattering colour family, make ONE of the five collections a \
+colour story around it — title it like a shade editorial (e.g. "The Sapphire \
+Hour"), say in the tagline why that shade works for them, and build every \
+piece inside that colour family.
 
 Field rules:
 - greeting: short and warm; use the person's name if given; nod to the day or \

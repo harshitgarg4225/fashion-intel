@@ -291,6 +291,7 @@ function placeFeedCard(c) {
 // ---------- inline style quiz (progressive profiling, zero model cost) ----------
 const QUIZ_BANK = [
   { id: "colours", q: "Which colours do you reach for most?", opts: ["Earth tones", "Monochrome", "Blues & navy", "Brights"] },
+  { id: "power_colour", q: "You get the most compliments wearing…", opts: ["Dark neutrals", "Earth & rust tones", "Blues & greens", "Whites & creams"] },
   { id: "fit", q: "How do you like your fit?", opts: ["Relaxed everywhere", "Tailored up top", "Slim throughout", "Oversized statement"] },
   { id: "footwear", q: "Your default footwear?", opts: ["White sneakers", "Loafers", "Sandals", "Boots"] },
   { id: "prints", q: "Prints or plains?", opts: ["Plains mostly", "Subtle textures", "Stripes & checks", "Bold prints"] },
@@ -729,12 +730,35 @@ function renderAssistantInto(el, raw, done) {
 }
 
 // ---------- chat rendering ----------
-function addUserMsg(text) {
+function addUserMsg(text, imgSrc) {
   const div = document.createElement("div");
   div.className = "msg user";
-  div.innerHTML = `<div class="bubble">${esc(text)}</div>`;
+  div.innerHTML = `<div class="bubble">${imgSrc ? `<img src="${esc(imgSrc)}" alt="Shared photo">` : ""}${esc(text)}</div>`;
   messagesEl.appendChild(div);
   return div;
+}
+
+// ---------- photo styling (visual search) ----------
+let pendingImage = null; // { media_type, data, thumb }
+
+async function prepareImage(file) {
+  const bmp = await createImageBitmap(file);
+  const scale = max => {
+    const r = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(bmp.width * r));
+    cv.height = Math.max(1, Math.round(bmp.height * r));
+    cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+    return cv.toDataURL("image/jpeg", 0.82);
+  };
+  const full = scale(1024);
+  const thumb = scale(220);
+  return { media_type: "image/jpeg", data: full.split(",")[1], thumb };
+}
+
+function clearAttachment() {
+  pendingImage = null;
+  $("attachPreview").hidden = true;
 }
 
 function addSystemMsg(text) {
@@ -768,7 +792,7 @@ function renderHistory() {
   messagesEl.innerHTML = "";
   let lastChips = null;
   for (const m of messages) {
-    if (m.role === "user") addUserMsg(m.content);
+    if (m.role === "user") addUserMsg(m.content, m.img);
     else lastChips = renderAssistantInto(addAssistantShell(), m.content, true);
   }
   emptyState.style.display = messages.length ? "none" : "";
@@ -778,12 +802,15 @@ function renderHistory() {
 // ---------- streaming chat ----------
 async function send(text) {
   text = (text || "").trim();
-  if (!text || streaming) return;
+  const img = pendingImage;
+  if ((!text && !img) || streaming) return;
+  if (!text) text = "Style this — find me the pieces.";
+  clearAttachment();
 
   const gen = chatGen;
-  messages.push({ role: "user", content: text });
+  messages.push({ role: "user", content: text, ...(img ? { img: img.thumb } : {}) });
   emptyState.style.display = "none";
-  const userDiv = addUserMsg(text);
+  const userDiv = addUserMsg(text, img && img.thumb);
   setChips(null);
   inputEl.value = "";
   autosize();
@@ -803,7 +830,12 @@ async function send(text) {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, profile: profile || {} }),
+      body: JSON.stringify({
+        // history travels as text; the photo rides only with this turn
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        profile: profile || {},
+        ...(img ? { image: { media_type: img.media_type, data: img.data } } : {}),
+      }),
       signal: abortCtrl.signal,
     });
 
@@ -939,6 +971,28 @@ inputEl.addEventListener("keydown", e => {
 });
 $("composer").addEventListener("submit", e => { e.preventDefault(); send(inputEl.value); });
 stopBtn.onclick = () => abortCtrl && abortCtrl.abort();
+
+const fileInput = $("fileInput");
+$("attachBtn").onclick = () => fileInput.click();
+fileInput.onchange = async () => {
+  const f = fileInput.files[0];
+  fileInput.value = "";
+  if (!f || !f.type.startsWith("image/")) return;
+  try {
+    pendingImage = await prepareImage(f);
+  } catch {
+    toast("Couldn't read that photo — try another");
+    return;
+  }
+  $("attachThumb").src = pendingImage.thumb;
+  $("attachPreview").hidden = false;
+  inputEl.placeholder = "e.g. Find me these pieces / How do I style this?";
+  inputEl.focus();
+};
+$("attachRemove").onclick = () => {
+  clearAttachment();
+  inputEl.placeholder = "Ask your stylist anything…";
+};
 
 document.querySelectorAll(".starter").forEach(b => (b.onclick = () => send(b.dataset.q)));
 

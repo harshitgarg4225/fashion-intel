@@ -40,6 +40,7 @@
   <symbol id="i-less" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12h7"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><rect x="3.5" y="7" width="17" height="12.5" rx="2.5"/><path d="M9 7l1.3-2.2h3.4L15 7"/><circle cx="12" cy="13" r="3.2"/></symbol>
 </svg>
 
 <header class="topbar">
@@ -93,7 +94,14 @@
 
   <div class="composer-wrap">
     <div id="chips" class="chips"></div>
+    <div id="attachPreview" class="attach-preview" hidden>
+      <img id="attachThumb" alt="Photo to style">
+      <span class="muted">Photo attached — ask anything about it</span>
+      <button type="button" id="attachRemove" class="icon-btn sm-btn" aria-label="Remove photo"><svg class="icon sm"><use href="#i-x"/></svg></button>
+    </div>
     <form id="composer" class="composer">
+      <button id="attachBtn" type="button" class="mic-btn" aria-label="Style a photo" title="Style a photo"><svg class="icon"><use href="#i-cam"/></svg></button>
+      <input type="file" id="fileInput" accept="image/*" hidden>
       <textarea id="input" rows="1" placeholder="Ask your stylist anything…" enterkeyhint="send"></textarea>
       <button id="micBtn" type="button" class="mic-btn" aria-label="Speak your request" hidden><svg class="icon"><use href="#i-mic"/></svg></button>
       <button id="sendBtn" type="submit" class="send-btn" aria-label="Send"><svg class="icon"><use href="#i-arrow-up"/></svg></button>
