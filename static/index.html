@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f6f2ea">
-<title>Stylist — your AI shopping assistant</title>
+<title>Stylist — your AI fashion feed</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,600&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -19,7 +19,8 @@
     <h1>Stylist</h1>
   </div>
   <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="chat" role="tab">Chat</button>
+    <button class="tab active" data-tab="feed" role="tab">For&nbsp;You</button>
+    <button class="tab" data-tab="chat" role="tab">Stylist</button>
     <button class="tab" data-tab="saved" role="tab">Saved <span id="savedCount" class="count" hidden></span></button>
   </nav>
   <div class="topbar-actions">
@@ -28,7 +29,22 @@
   </div>
 </header>
 
-<main id="chatPanel" class="panel active">
+<!-- ============ FOR YOU FEED ============ -->
+<main id="feedPanel" class="panel active">
+  <div class="feed-head">
+    <p id="feedKicker" class="feed-kicker">Today's edit</p>
+    <h2 id="feedGreeting" class="feed-greeting">Dressing you<br><em>by the day</em></h2>
+    <div class="feed-meta">
+      <span id="weatherChip" class="weather-chip" hidden></span>
+      <button id="refreshFeed" class="refresh-btn">↻ New drop</button>
+    </div>
+  </div>
+  <div id="feedGrid" class="feed-grid"></div>
+  <p class="fineprint pad">Imagery is AI-generated inspiration · shop links open live retailer searches.</p>
+</main>
+
+<!-- ============ CHAT ============ -->
+<main id="chatPanel" class="panel">
   <div id="messages" class="messages" aria-live="polite"></div>
 
   <div id="emptyState" class="empty-state">
@@ -55,21 +71,35 @@
   </div>
 </main>
 
+<!-- ============ SAVED ============ -->
 <main id="savedPanel" class="panel">
   <div id="savedList" class="saved-list"></div>
   <div id="savedEmpty" class="empty-state small">
     <h2>Nothing saved <em>yet</em></h2>
-    <p class="muted">Tap the ♡ on any look card to keep it here.</p>
+    <p class="muted">Tap the ♡ on any look to keep it here.</p>
   </div>
 </main>
 
-<!-- Onboarding / profile modal -->
+<!-- ============ LOOK DETAIL SHEET ============ -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-backdrop" data-close></div>
+  <div class="sheet-card" role="dialog" aria-modal="true">
+    <button class="sheet-close" data-close aria-label="Close">✕</button>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<!-- ============ ONBOARDING / PROFILE ============ -->
 <div id="modal" class="modal" hidden>
   <div class="modal-card">
     <p class="empty-kicker">Style profile</p>
     <h2>Make it <em>yours</em></h2>
-    <p class="muted">30 seconds — your stylist uses this to tailor every look. Everything stays on your device.</p>
+    <p class="muted">30 seconds — your feed and stylist are built from this. Everything stays on your device.</p>
     <form id="profileForm">
+      <label class="field">
+        <span>First name <small>(for your daily edit)</small></span>
+        <input type="text" id="nameInput" class="text-input" placeholder="e.g. Harshit" maxlength="30" autocomplete="given-name">
+      </label>
       <label class="field">
         <span>Shopping for</span>
         <div class="pill-row" data-name="gender">
@@ -108,9 +138,9 @@
       </label>
       <label class="field">
         <span>Anything else? <small>(fit, sizes, colors you avoid…)</small></span>
-        <input type="text" id="notesInput" placeholder="e.g. slim fit, size M, no bright yellow" maxlength="180">
+        <input type="text" id="notesInput" class="text-input" placeholder="e.g. slim fit, size M, no bright yellow" maxlength="180">
       </label>
-      <button type="submit" class="primary-btn">Start styling</button>
+      <button type="submit" class="primary-btn">Build my feed</button>
     </form>
   </div>
 </div>

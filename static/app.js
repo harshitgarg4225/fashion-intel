@@ -14,8 +14,11 @@ const store = {
 let profile = store.get("sty_profile", null);
 let messages = store.get("sty_messages", []);   // [{role, content}]
 let saved = store.get("sty_saved", []);          // [look]
+let taste = store.get("sty_taste", { loved: [], less: [] });
 let streaming = false;
 let abortCtrl = null;
+let feedLoading = false;
+let currentLook = null; // look shown in the sheet
 
 // ---------- retailer deep links ----------
 const RETAILERS = {
@@ -51,14 +54,37 @@ const CAT_ICON = {
   accessory: "🕶️", dress: "👗", other: "🛍️",
 };
 
+// ---------- AI imagery (pollinations.ai — free, keyless) ----------
+const HERO_STYLE = ", premium fashion editorial photography, shot on medium format film, soft directional light, rich muted tones, shallow depth of field, no text, no watermark, no logo";
+const THUMB_STYLE = ", clean studio product photography, warm neutral seamless background, soft shadow, no text, no watermark";
+
+function hashSeed(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h % 100000;
+}
+const heroURL = (prompt, seed, w = 832, h = 1040) =>
+  `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + HERO_STYLE)}?width=${w}&height=${h}&nologo=true&model=flux&seed=${seed}`;
+const thumbURL = (prompt, seed) =>
+  `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + THUMB_STYLE)}?width=384&height=456&nologo=true&model=flux&seed=${seed}`;
+
+function paletteGradient(palette) {
+  const cols = Array.isArray(palette) && palette.length >= 2
+    ? palette.filter(c => /^#[0-9a-fA-F]{3,8}$/.test(String(c)))
+    : [];
+  if (cols.length < 2) return "linear-gradient(160deg, #3a2a1f, #1d1a16)";
+  return `linear-gradient(160deg, ${cols.join(", ")})`;
+}
+
 // ---------- dom ----------
 const $ = id => document.getElementById(id);
 const messagesEl = $("messages"), emptyState = $("emptyState"), chipsEl = $("chips");
 const inputEl = $("input"), sendBtn = $("sendBtn"), stopBtn = $("stopBtn");
-const modal = $("modal"), toastEl = $("toast");
+const modal = $("modal"), toastEl = $("toast"), sheetEl = $("sheet");
+const feedGrid = $("feedGrid");
 
 // ---------- helpers ----------
-const esc = s => s.replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 
 function toast(msg) {
   toastEl.textContent = msg;
@@ -70,6 +96,19 @@ function toast(msg) {
 function scrollToBottom(force) {
   const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 240;
   if (force || nearBottom) window.scrollTo({ top: document.body.scrollHeight });
+}
+
+// wire lazy image fade-in + graceful fallback for a container we just injected
+function hydrateImages(root) {
+  root.querySelectorAll("img[data-hydrate]").forEach(img => {
+    img.removeAttribute("data-hydrate");
+    const done = () => img.classList.add("loaded");
+    if (img.complete && img.naturalWidth > 0) done();
+    else {
+      img.addEventListener("load", done, { once: true });
+      img.addEventListener("error", () => img.remove(), { once: true });
+    }
+  });
 }
 
 // tiny markdown: bold, italic, code, bullets, paragraphs
@@ -91,8 +130,222 @@ function md(text) {
   return out.join("");
 }
 
+// ---------- weather (open-meteo, free & keyless) ----------
+const WMO = c =>
+  c <= 1 ? "clear" : c <= 3 ? "cloudy" : c <= 48 ? "misty" :
+  c <= 67 ? "rainy" : c <= 77 ? "snowy" : c <= 82 ? "showers" : "stormy";
+
+async function getWeather() {
+  const cached = store.get("sty_weather", null);
+  if (cached && Date.now() - cached.at < 60 * 60 * 1000) return cached.text;
+  // Hard-race the whole permission+fix flow: an unanswered permission prompt
+  // fires neither callback, and the feed must never block on it.
+  const pos = await Promise.race([
+    new Promise(res => {
+      if (!navigator.geolocation) return res(null);
+      navigator.geolocation.getCurrentPosition(
+        p => res(p.coords), () => res(null), { timeout: 3000, maximumAge: 600000 });
+    }),
+    new Promise(res => setTimeout(() => res(null), 3500)),
+  ]);
+  if (!pos) return null;
+  try {
+    const r = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${pos.latitude}&longitude=${pos.longitude}&current=temperature_2m,weather_code`,
+      { signal: AbortSignal.timeout(4000) });
+    const j = await r.json();
+    const t = Math.round(j.current.temperature_2m);
+    const text = `${t}°C, ${WMO(j.current.weather_code)}`;
+    store.set("sty_weather", { at: Date.now(), text });
+    return text;
+  } catch { return null; }
+}
+
+// ---------- FEED ----------
+const todayKey = () => new Date().toISOString().slice(0, 10);
+const profileSig = () => JSON.stringify(profile || {});
+
+function feedSkeleton() {
+  feedGrid.innerHTML = Array.from({ length: 5 },
+    (_, i) => `<div class="skeleton" style="animation-delay:${i * .06}s"></div>`).join("");
+}
+
+function collectionToLook(c) {
+  return {
+    title: c.title, occasion: c.occasion, why: c.why, tip: c.tip,
+    palette: c.palette, image_prompt: c.image_prompt, items: c.items || [],
+  };
+}
+
+function renderFeed(data) {
+  const greetEl = $("feedGreeting");
+  if (data.greeting) greetEl.innerHTML = `<em>${esc(data.greeting)}</em>`;
+  feedGrid.innerHTML = data.collections.map((c, i) => {
+    const seed = hashSeed(c.title + todayKey());
+    const dots = (c.palette || []).slice(0, 4)
+      .filter(p => /^#[0-9a-fA-F]{3,8}$/.test(String(p)))
+      .map(p => `<span class="dot" style="background:${esc(p)}"></span>`).join("");
+    return `<button class="feed-card" data-idx="${i}" style="animation-delay:${i * .07}s">
+      <div class="card-bg" style="background:${paletteGradient(c.palette)}"></div>
+      <img class="card-img" data-hydrate loading="lazy" alt="" src="${esc(heroURL(c.image_prompt || c.title, seed))}">
+      <div class="card-scrim"></div>
+      <div class="card-text">
+        <p class="card-kicker">${esc(c.occasion || "")}</p>
+        <h3 class="card-title">${esc(c.title)}</h3>
+        <p class="card-tagline">${esc(c.tagline || "")}</p>
+        <div class="card-foot">${dots}<span class="card-cta">Shop the look →</span></div>
+      </div>
+    </button>`;
+  }).join("");
+  hydrateImages(feedGrid);
+  feedGrid.querySelectorAll(".feed-card").forEach(card => {
+    card.onclick = () => openSheet(collectionToLook(data.collections[+card.dataset.idx]));
+  });
+}
+
+async function loadFeed(force) {
+  if (feedLoading || !profile) return;
+  const cached = store.get("sty_feed", null);
+  if (!force && cached && cached.date === todayKey() && cached.sig === profileSig()) {
+    renderFeed(cached.data);
+    if (cached.weather) showWeather(cached.weather);
+    return;
+  }
+
+  feedLoading = true;
+  $("refreshFeed").classList.add("spinning");
+  feedSkeleton();
+
+  const weather = await getWeather();
+  if (weather) showWeather(weather);
+  const avoid = force && cached ? (cached.data.collections || []).map(c => c.title) : [];
+
+  try {
+    const res = await fetch("/api/feed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile,
+        context: { weather: weather || "unknown", loved: taste.loved, less: taste.less, avoid },
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Feed failed (${res.status})`);
+    if (!Array.isArray(data.collections) || !data.collections.length) throw new Error("Empty feed.");
+    store.set("sty_feed", { date: todayKey(), sig: profileSig(), data, weather });
+    renderFeed(data);
+  } catch (err) {
+    feedGrid.innerHTML = `<div class="feed-error">
+      <p>${esc(err.message || "Couldn't load your feed.")}</p>
+      <button class="refresh-btn" onclick="document.getElementById('refreshFeed').click()">Try again</button>
+    </div>`;
+  }
+  feedLoading = false;
+  $("refreshFeed").classList.remove("spinning");
+}
+
+function showWeather(text) {
+  const chip = $("weatherChip");
+  chip.textContent = `◦ ${text}`;
+  chip.hidden = false;
+}
+
+$("refreshFeed").onclick = () => loadFeed(true);
+
+// ---------- look sheet ----------
+function openSheet(look) {
+  currentLook = look;
+  const seed = hashSeed(look.title + todayKey());
+  const items = (look.items || []).map((item, i) => {
+    const q = item.search || item.name || "";
+    const links = retailersFor().map(([name, fn], j) =>
+      `<a class="shop-link${j === 0 ? " primary" : ""}" href="${esc(fn(q))}" target="_blank" rel="noopener">${name} ↗</a>`
+    ).join("");
+    const thumb = item.image_prompt
+      ? `<div class="thumb-wrap">
+           <div class="thumb-bg" style="background:${paletteGradient(look.palette)}"></div>
+           <img class="item-thumb" data-hydrate loading="lazy" alt="" src="${esc(thumbURL(item.image_prompt, seed + i + 1))}">
+         </div>`
+      : `<div class="thumb-wrap"><div class="thumb-bg" style="background:${paletteGradient(look.palette)}"></div></div>`;
+    return `<div class="sheet-item">
+      ${thumb}
+      <div class="sheet-item-body">
+        <div class="item-top">
+          <span class="item-name">${esc(item.name || "")}</span>
+          ${item.price ? `<span class="item-price">${esc(item.price)}</span>` : ""}
+        </div>
+        <div class="shop-row">${links}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  const savedNow = isSaved(look);
+  $("sheetBody").innerHTML = `
+    <div class="sheet-hero">
+      <div class="card-bg" style="background:${paletteGradient(look.palette)}"></div>
+      ${look.image_prompt ? `<img class="card-img" data-hydrate alt="" src="${esc(heroURL(look.image_prompt, seed))}">` : ""}
+      <div class="card-scrim"></div>
+      <div class="card-text">
+        <p class="card-kicker">${esc(look.occasion || "")}</p>
+        <h3 class="card-title">${esc(look.title || "Look")}</h3>
+      </div>
+    </div>
+    <div class="sheet-content">
+      ${look.why ? `<p class="sheet-why">${esc(look.why)}</p>` : ""}
+      ${look.tip ? `<div class="tip-box"><span>✦</span><span><b>Stylist's tip</b> — ${esc(look.tip)}</span></div>` : ""}
+      <p class="sheet-section">The pieces</p>
+      ${items}
+      <div class="taste-row">
+        <button class="taste-btn" id="tasteMore">More like this</button>
+        <button class="taste-btn" id="tasteLess">Less like this</button>
+      </div>
+      <div class="sheet-actions">
+        <button class="sheet-save${savedNow ? " saved" : ""}" id="sheetSave">${savedNow ? "♥ Saved" : "♡ Save look"}</button>
+        <button class="sheet-refine" id="sheetRefine">Refine in chat</button>
+      </div>
+    </div>`;
+  sheetEl.hidden = false;
+  document.body.style.overflow = "hidden";
+  hydrateImages($("sheetBody"));
+
+  $("sheetSave").onclick = e => {
+    const btn = e.currentTarget;
+    if (isSaved(look)) {
+      saved = saved.filter(s => lookKey(s) !== lookKey(look));
+      btn.classList.remove("saved"); btn.textContent = "♡ Save look";
+      toast("Removed from saved");
+    } else {
+      saved.push(look);
+      btn.classList.add("saved"); btn.textContent = "♥ Saved";
+      toast("Saved ♥");
+    }
+    store.set("sty_saved", saved);
+    refreshSavedBadge();
+  };
+  $("sheetRefine").onclick = () => {
+    closeSheet();
+    switchTab("chat");
+    send(`Refine the "${look.title}" look (${look.occasion || "no occasion"}) — suggest swaps or variations that fit my profile.`);
+  };
+  $("tasteMore").onclick = () => { pushTaste("loved", look); toast("Noted — more of this vibe"); };
+  $("tasteLess").onclick = () => { pushTaste("less", look); toast("Got it — dialing this down"); };
+}
+
+function pushTaste(kind, look) {
+  const tag = `${look.title} (${look.occasion || ""})`.slice(0, 60);
+  taste[kind] = [...new Set([tag, ...taste[kind]])].slice(0, 8);
+  store.set("sty_taste", taste);
+}
+
+function closeSheet() {
+  sheetEl.hidden = true;
+  document.body.style.overflow = "";
+  currentLook = null;
+}
+sheetEl.addEventListener("click", e => { if (e.target.closest("[data-close]")) closeSheet(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !sheetEl.hidden) closeSheet(); });
+
 // ---------- assistant message parsing ----------
-// Splits raw model output into segments: {type:"text"|"look"|"chips"|"pending"}
 function parseAssistant(raw) {
   const segments = [];
   const fence = /```(look|chips)\s*\n([\s\S]*?)```/g;
@@ -121,6 +374,13 @@ const lookKey = look => JSON.stringify([look.title, (look.items || []).map(i => 
 const isSaved = look => saved.some(s => lookKey(s) === lookKey(look));
 
 function lookCardHTML(look, opts = {}) {
+  const seed = hashSeed(look.title || "look");
+  const hero = look.image_prompt
+    ? `<div class="look-hero">
+         <div class="card-bg" style="background:${paletteGradient(look.palette)}"></div>
+         <img class="card-img" data-hydrate loading="lazy" alt="" src="${esc(heroURL(look.image_prompt, seed, 832, 520))}">
+       </div>`
+    : "";
   const items = (look.items || []).map(item => {
     const q = item.search || item.name || "";
     const links = retailersFor().map(([name, fn], i) =>
@@ -142,15 +402,18 @@ function lookCardHTML(look, opts = {}) {
     : `<button class="save-btn${savedNow ? " saved" : ""}" data-save title="Save look">${savedNow ? "♥" : "♡"}</button>`;
 
   return `<article class="look-card" data-look="${esc(JSON.stringify(look))}">
-    <div class="look-head">
-      <div>
-        <h3 class="look-title">${esc(look.title || "Look")}</h3>
-        ${look.occasion ? `<span class="look-occasion">${esc(look.occasion)}</span>` : ""}
+    ${hero}
+    <div class="look-body">
+      <div class="look-head">
+        <div>
+          <h3 class="look-title">${esc(look.title || "Look")}</h3>
+          ${look.occasion ? `<span class="look-occasion">${esc(look.occasion)}</span>` : ""}
+        </div>
+        ${saveBtn}
       </div>
-      ${saveBtn}
+      ${look.why ? `<p class="look-why">${esc(look.why)}</p>` : ""}
+      ${items}
     </div>
-    ${look.why ? `<p class="look-why">${esc(look.why)}</p>` : ""}
-    ${items}
   </article>`;
 }
 
@@ -167,6 +430,7 @@ function renderAssistantInto(el, raw, done) {
   }
   if (!done && !html) html = `<div class="typing"><i></i><i></i><i></i></div>`;
   el.innerHTML = html;
+  hydrateImages(el);
   return chips;
 }
 
@@ -216,7 +480,7 @@ function renderHistory() {
   setChips(messages.length ? lastChips : null);
 }
 
-// ---------- streaming ----------
+// ---------- streaming chat ----------
 async function send(text) {
   text = (text || "").trim();
   if (!text || streaming) return;
@@ -311,6 +575,7 @@ function refreshSavedBadge() {
 function renderSaved() {
   const list = $("savedList");
   list.innerHTML = saved.map(l => lookCardHTML(l, { removable: true })).join("");
+  hydrateImages(list);
   $("savedEmpty").style.display = saved.length ? "none" : "";
   refreshSavedBadge();
 }
@@ -335,26 +600,28 @@ document.addEventListener("click", e => {
       saveBtn.textContent = "♥";
       toast("Saved ♥");
     }
+    store.set("sty_saved", saved);
+    refreshSavedBadge();
   } else {
     saved = saved.filter(s => lookKey(s) !== lookKey(look));
+    store.set("sty_saved", saved);
     card.remove();
     toast("Removed");
     $("savedEmpty").style.display = saved.length ? "none" : "";
+    refreshSavedBadge();
   }
-  store.set("sty_saved", saved);
-  refreshSavedBadge();
 });
 
 // ---------- tabs ----------
-document.querySelectorAll(".tab").forEach(tab => {
-  tab.onclick = () => {
-    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
-    const which = tab.dataset.tab;
-    $("chatPanel").classList.toggle("active", which === "chat");
-    $("savedPanel").classList.toggle("active", which === "saved");
-    if (which === "saved") renderSaved();
-  };
-});
+function switchTab(which) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === which));
+  $("feedPanel").classList.toggle("active", which === "feed");
+  $("chatPanel").classList.toggle("active", which === "chat");
+  $("savedPanel").classList.toggle("active", which === "saved");
+  if (which === "saved") renderSaved();
+  if (which === "feed") loadFeed(false);
+}
+document.querySelectorAll(".tab").forEach(tab => (tab.onclick = () => switchTab(tab.dataset.tab)));
 
 // ---------- composer ----------
 function autosize() {
@@ -370,17 +637,9 @@ stopBtn.onclick = () => abortCtrl && abortCtrl.abort();
 
 document.querySelectorAll(".starter").forEach(b => (b.onclick = () => send(b.dataset.q)));
 
-$("newChatBtn").onclick = () => {
-  if (streaming) abortCtrl && abortCtrl.abort();
-  messages = [];
-  store.set("sty_messages", []);
-  renderHistory();
-};
-
 // ---------- profile modal ----------
 function openModal() {
   modal.hidden = false;
-  // hydrate current selections
   document.querySelectorAll(".pill-row").forEach(row => {
     const name = row.dataset.name;
     const current = profile ? profile[name] : null;
@@ -391,6 +650,7 @@ function openModal() {
       p.classList.toggle("on", on);
     });
   });
+  $("nameInput").value = (profile && profile.name) || "";
   $("notesInput").value = (profile && profile.notes) || "";
 }
 
@@ -399,9 +659,7 @@ document.querySelectorAll(".pill-row").forEach(row => {
     const pill = e.target.closest(".pill");
     if (!pill) return;
     if (row.classList.contains("multi")) pill.classList.toggle("on");
-    else {
-      row.querySelectorAll(".pill").forEach(p => p.classList.toggle("on", p === pill));
-    }
+    else row.querySelectorAll(".pill").forEach(p => p.classList.toggle("on", p === pill));
   });
 });
 
@@ -413,6 +671,7 @@ $("profileForm").addEventListener("submit", e => {
     return row.classList.contains("multi") ? on.join(", ") : on[0] || "";
   };
   profile = {
+    name: $("nameInput").value.trim(),
     gender: read("gender") || "no preference",
     region: read("region") || "India",
     budget: read("budget") || "mid-range, quality basics",
@@ -421,15 +680,23 @@ $("profileForm").addEventListener("submit", e => {
   };
   store.set("sty_profile", profile);
   modal.hidden = true;
-  toast("Profile saved — looks will be tailored to you");
-  renderHistory(); // re-render so shop links use the new region
+  toast("Profile saved — styling everything to you");
+  renderHistory();          // re-render so shop links use the new region
+  loadFeed(true);           // profile changed → fresh feed
 });
 
 $("profileBtn").onclick = openModal;
+$("newChatBtn").onclick = () => {
+  if (streaming && abortCtrl) abortCtrl.abort();
+  messages = [];
+  store.set("sty_messages", []);
+  renderHistory();
+  switchTab("chat");
+};
 
 // ---------- boot ----------
 renderHistory();
 refreshSavedBadge();
 if (!profile) openModal();
-scrollToBottom(true);
+else loadFeed(false);
 })();
