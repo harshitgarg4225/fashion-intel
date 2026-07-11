@@ -95,14 +95,17 @@ function toast(msg) {
   toastEl.classList.remove("out");
   void toastEl.offsetWidth;               // restart the entrance animation
   clearTimeout(toastEl._t);
+  clearTimeout(toastEl._t2);
   toastEl._t = setTimeout(() => {
     toastEl.classList.add("out");
-    toastEl.addEventListener("animationend", () => {
+    const finish = () => {
       if (toastEl.classList.contains("out")) {
         toastEl.hidden = true;
         toastEl.classList.remove("out");
       }
-    }, { once: true });
+    };
+    toastEl.addEventListener("animationend", finish, { once: true });
+    toastEl._t2 = setTimeout(finish, 500); // safety net
   }, 2200);
 }
 

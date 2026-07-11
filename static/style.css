@@ -621,13 +621,18 @@ a { color: inherit; }
 
 .pill:active, .taste-btn:active, .shop-link:active, .modal-close:active, .tab:active { transform: scale(.96); }
 
-/* exit animations — enter/exit symmetry */
+/* exit animations — enter/exit symmetry.
+   NOTE: exits need their own keyframe names — reusing an entrance's name
+   with `reverse` does not restart the animation, so animationend never fires. */
 @keyframes sheetDown { to { transform: translate(-50%, 12%); opacity: 0; } }
+@keyframes fadeOut { to { opacity: 0; } }
+@keyframes cardOut { to { opacity: 0; transform: translateY(8px) scale(.99); } }
+@keyframes toastOut { to { opacity: 0; transform: translate(-50%, 8px); } }
 .sheet.closing .sheet-card { animation: sheetDown 280ms var(--ease-sheet) both; }
-.sheet.closing .sheet-backdrop { animation: fadeIn var(--t-med) var(--ease-out) reverse both; }
-.modal.closing { animation: fadeIn var(--t-fast) var(--ease-out) reverse both; }
-.modal.closing .modal-card { animation: cardIn var(--t-fast) var(--ease-out) reverse both; }
-.toast.out { animation: toastIn var(--t-med) var(--ease-out) reverse both; }
+.sheet.closing .sheet-backdrop { animation: fadeOut var(--t-med) var(--ease-out) both; }
+.modal.closing { animation: fadeOut var(--t-fast) var(--ease-out) both; }
+.modal.closing .modal-card { animation: cardOut var(--t-fast) var(--ease-out) both; }
+.toast.out { animation: toastOut var(--t-med) var(--ease-out) both; }
 
 /* streamed card resolves in place; only its text enters */
 .feed-card.from-skeleton { animation: none; }
@@ -636,6 +641,7 @@ a { color: inherit; }
 /* ============ toast ============ */
 .toast {
   position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+  pointer-events: none;  /* toasts inform, they never block taps */
   display: inline-flex; align-items: center; gap: var(--s2);
   background: var(--ink); color: var(--bg);
   font-size: var(--t-body-sm); line-height: 18px;
