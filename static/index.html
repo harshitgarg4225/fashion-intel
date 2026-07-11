@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f6f2ea">
-<title>Stylist — dressed for work in one tap</title>
-<meta name="description" content="Your AI stylist for the working week. One decisive outfit for today — weather-aware, dress-code-aware, shoppable in one tap. Private by design.">
+<title>Stylist — your personal shopping assistant</title>
+<meta name="description" content="A personal stylist for women with full lives: one decisive outfit for today, wedding-guest looks in minutes, every piece shoppable in one tap. Private by design — no selfie, no account.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Stylist — dressed for work in one tap">
-<meta property="og:description" content="Your AI stylist for the working week. One decisive outfit for today — weather-aware, shoppable in one tap.">
+<meta property="og:title" content="Stylist — your personal shopping assistant">
+<meta property="og:description" content="One decisive outfit for today. Wedding-guest looks in minutes. Every piece shoppable in one tap.">
 <meta property="og:image" content="/static/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -90,12 +90,12 @@
     <p class="empty-kicker">Your personal stylist</p>
     <h2>What are we<br><em>dressing for?</em></h2>
     <div class="starter-grid">
-      <button class="starter" data-q="What should I wear to work today? Decide for me — one outfit, no options.">What do I wear today? ⚡</button>
-      <button class="starter" data-q="Big client meeting tomorrow — I need to look sharp and credible. One decisive look.">Client meeting tomorrow 🤝</button>
-      <button class="starter" data-q="Build me a 5-day office capsule from ~8 pieces, zero repeats, minimal ironing">5-day office capsule 🗓️</button>
-      <button class="starter" data-q="Pack me for a 3-day business trip in one cabin bag — meetings by day, dinners at night">3-day business trip 🧳</button>
-      <button class="starter" data-q="Video calls all day — make me look sharp on camera, comfortable off it">Video-call sharp 🎥</button>
-      <button class="starter" data-q="Straight from the office to a dinner — upgrade my work outfit with one swap">Desk to dinner ✨</button>
+      <button class="starter" data-q="What should I wear today? Decide for me — one outfit, no options.">What do I wear today? ⚡</button>
+      <button class="starter" data-q="I'm a wedding guest — sangeet next week. Style me something that photographs beautifully.">Wedding guest look 💍</button>
+      <button class="starter" data-q="Big meeting tomorrow — I need to own the room. One decisive look.">Own the room tomorrow 💼</button>
+      <button class="starter" data-q="Brunch with friends this weekend — effortless but put together">Weekend brunch ☕</button>
+      <button class="starter" data-q="Build me a 5-day work capsule from ~8 pieces, zero repeats, minimal ironing">5-day work capsule 🗓️</button>
+      <button class="starter" data-q="Straight from work to a dinner — upgrade my outfit with one swap">Desk to dinner ✨</button>
     </div>
   </div>
 
@@ -152,9 +152,18 @@
       <div class="field">
         <span>Shopping for</span>
         <div class="pill-row" data-name="gender">
-          <button type="button" class="pill" data-v="menswear">Menswear</button>
           <button type="button" class="pill" data-v="womenswear">Womenswear</button>
+          <button type="button" class="pill" data-v="menswear">Menswear</button>
           <button type="button" class="pill" data-v="anything that fits my vibe">No preference</button>
+        </div>
+      </div>
+      <div class="field">
+        <span>Age range <small>(styling changes with it — optional)</small></span>
+        <div class="pill-row" data-name="age">
+          <button type="button" class="pill" data-v="in my 20s">20s</button>
+          <button type="button" class="pill" data-v="in my 30s">30s</button>
+          <button type="button" class="pill" data-v="in my 40s">40s</button>
+          <button type="button" class="pill" data-v="in my 50s">50s+</button>
         </div>
       </div>
       <div class="field">
@@ -187,16 +196,17 @@
         <span>Your vibe <small>(pick any)</small></span>
         <div class="pill-row multi" data-name="style">
           <button type="button" class="pill" data-v="clean minimalist">Minimalist</button>
+          <button type="button" class="pill" data-v="elegant classic">Elegant&nbsp;classic</button>
           <button type="button" class="pill" data-v="smart casual">Smart casual</button>
-          <button type="button" class="pill" data-v="streetwear">Streetwear</button>
-          <button type="button" class="pill" data-v="old money / quiet luxury">Quiet luxury</button>
+          <button type="button" class="pill" data-v="boho / relaxed feminine">Boho</button>
+          <button type="button" class="pill" data-v="glam / statement">Glam</button>
           <button type="button" class="pill" data-v="athleisure">Athleisure</button>
-          <button type="button" class="pill" data-v="ethnic / fusion">Ethnic&nbsp;fusion</button>
+          <button type="button" class="pill" data-v="ethnic / fusion">Ethnic&nbsp;&amp;&nbsp;fusion</button>
         </div>
       </div>
       <label class="field">
         <span>Anything else? <small>(fit, sizes, colors you avoid…)</small></span>
-        <input type="text" id="notesInput" class="text-input" placeholder="e.g. slim fit, size M, no bright yellow" maxlength="180">
+        <input type="text" id="notesInput" class="text-input" placeholder="e.g. petite, size M, prefer sleeves, no bodycon" maxlength="180">
       </label>
       <div class="trust-box">
         <svg class="icon"><use href="#i-lock"/></svg>

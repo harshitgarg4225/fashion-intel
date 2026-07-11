@@ -1,10 +1,10 @@
-# Stylist — dressed for work in one tap
+# Stylist — your personal shopping assistant
 
-An AI stylist for **busy working professionals**: every morning the feed opens with one decisive answer — *wear this today* — tuned to the weather, your dress code, and your taste. Built on Glance AI's loop (personalized looks → shop the look) at the **cheapest possible running cost** with a magazine-grade UX.
+A personal stylist for **women 22–55 with full lives** — work, weddings, brunches, travel, festivals — and no time to scroll. Every morning the feed opens with one decisive answer: *wear this today*, tuned to the weather, her dress code, and her taste. Built on Glance AI's loop (personalized looks → shop the look) at the **cheapest possible running cost** with a magazine-grade UX. (Menswear fully supported via the same profile switch.)
 
 **Try it:** deploy to Railway (below), open the URL on your phone, answer the 30-second style quiz, and your daily feed builds itself.
 
-The five daily collections are structured for the working week: **Today's answer** (decided for you), **High stakes** (client/boardroom), **After hours** (desk to dinner, one swap), **Weekend reset**, and a **Wildcard**. Chat starters match ("What do I wear today?", "5-day office capsule", "3-day business trip, one cabin bag"). You can also **photograph any outfit or product** and the stylist identifies the pieces and makes them shoppable (Claude vision, ~$0.002/photo).
+The five daily collections are structured for her week: **Today's answer** (decided), **Power move** (boardroom / own-the-room), **After hours** (desk to dinner in one swap), **Off duty** (brunch, errands), and a **Wildcard** (wedding season, festive, travel, or a trend worth her time). Looks arrive *finished* — the earrings, the bag, the shoe included — with comfort-aware footwear and fluid western/ethnic/fusion range. Chat starters match the life ("What do I wear today?", "Wedding guest look", "5-day work capsule"), and she can **photograph any outfit or product** to have the pieces identified and made shoppable (Claude vision, ~$0.002/photo). Retailer links are women-first in India: Myntra, Nykaa Fashion, Ajio, Amazon.
 
 ## What it does
 

@@ -25,9 +25,9 @@ let chatGen = 0;        // bumped on "New chat" so an in-flight reply can't leak
 const RETAILERS = {
   "India": [
     ["Myntra", q => `https://www.myntra.com/${encodeURIComponent(q.trim().replace(/\s+/g, "-"))}`],
-    ["Amazon", q => `https://www.amazon.in/s?k=${encodeURIComponent(q)}`],
+    ["Nykaa",  q => `https://www.nykaafashion.com/search/?q=${encodeURIComponent(q)}`],
     ["Ajio",   q => `https://www.ajio.com/search/?text=${encodeURIComponent(q)}`],
-    ["Flipkart", q => `https://www.flipkart.com/search?q=${encodeURIComponent(q)}`],
+    ["Amazon", q => `https://www.amazon.in/s?k=${encodeURIComponent(q)}`],
   ],
   "United States": [
     ["Amazon", q => `https://www.amazon.com/s?k=${encodeURIComponent(q)}`],
@@ -290,13 +290,14 @@ function placeFeedCard(c) {
 
 // ---------- inline style quiz (progressive profiling, zero model cost) ----------
 const QUIZ_BANK = [
-  { id: "colours", q: "Which colours do you reach for most?", opts: ["Earth tones", "Monochrome", "Blues & navy", "Brights"] },
-  { id: "power_colour", q: "You get the most compliments wearing…", opts: ["Dark neutrals", "Earth & rust tones", "Blues & greens", "Whites & creams"] },
-  { id: "fit", q: "How do you like your fit?", opts: ["Relaxed everywhere", "Tailored up top", "Slim throughout", "Oversized statement"] },
-  { id: "footwear", q: "Your default footwear?", opts: ["White sneakers", "Loafers", "Sandals", "Boots"] },
-  { id: "prints", q: "Prints or plains?", opts: ["Plains mostly", "Subtle textures", "Stripes & checks", "Bold prints"] },
-  { id: "accessories", q: "Accessories level?", opts: ["Minimal — a watch", "A ring or a chain", "Layered up", "Depends on the day"] },
-  { id: "layering", q: "Layers — yes or no?", opts: ["Love layering", "Only in winter", "Too hot for that", "Show me how"] },
+  { id: "colours", q: "Which colours do you reach for most?", opts: ["Earth tones", "Monochrome", "Pastels", "Jewel tones"] },
+  { id: "power_colour", q: "You get the most compliments wearing…", opts: ["Dark neutrals", "Reds & rust", "Blues & greens", "Whites & creams"] },
+  { id: "dresses", q: "Dresses or separates?", opts: ["Dresses, always", "Separates I can mix", "Co-ord sets", "Depends on the day"] },
+  { id: "footwear", q: "Your everyday footwear?", opts: ["White sneakers", "Flats & ballerinas", "Block heels", "Heels, always"] },
+  { id: "jewellery", q: "Your jewellery lane?", opts: ["Gold", "Silver", "Minimal / none", "Statement pieces"] },
+  { id: "ethnic", q: "Ethnic wear — how often?", opts: ["Part of my week", "Festive & weddings", "Rarely", "Show me fusion"] },
+  { id: "fit", q: "How do you like your fit?", opts: ["Relaxed & flowy", "Tailored & structured", "Fitted", "Mix it up"] },
+  { id: "prints", q: "Prints or plains?", opts: ["Plains mostly", "Florals", "Subtle textures", "Bold prints"] },
 ];
 let quizAnswers = store.get("sty_quiz", {});
 
@@ -1007,7 +1008,7 @@ function openModal() {
   $("modalClose").hidden = !profile;
   // Smart defaults on first run — one tap to a working feed.
   const defaults = profile ? null
-    : { region: "India", budget: "mid-range, quality basics", dresscode: "business casual" };
+    : { gender: "womenswear", region: "India", budget: "mid-range, quality basics", dresscode: "business casual" };
   document.querySelectorAll(".pill-row").forEach(row => {
     const name = row.dataset.name;
     const current = profile ? profile[name] : (defaults && defaults[name]) || null;
@@ -1040,7 +1041,8 @@ $("profileForm").addEventListener("submit", e => {
   };
   profile = {
     name: $("nameInput").value.trim(),
-    gender: read("gender") || "no preference",
+    gender: read("gender") || "womenswear",
+    age: read("age"),
     region: read("region") || "India",
     dresscode: read("dresscode") || "business casual",
     budget: read("budget") || "mid-range, quality basics",
