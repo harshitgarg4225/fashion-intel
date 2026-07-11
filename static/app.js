@@ -15,6 +15,7 @@ let profile = store.get("sty_profile", null);
 let messages = store.get("sty_messages", []);   // [{role, content}]
 let saved = store.get("sty_saved", []);          // [look]
 let taste = store.get("sty_taste", { loved: [], less: [] });
+let events = store.get("sty_events", []);        // [{occasion, date, vibe, note}]
 let streaming = false;
 let abortCtrl = null;
 let feedLoading = false;
@@ -327,6 +328,43 @@ function refreshTasteChip() {
   $("tasteChip").hidden = !(taste.loved.length || taste.less.length || Object.keys(quizAnswers).length);
 }
 
+// ---------- occasion studio (her calendar is the retention loop) ----------
+const daysUntil = date =>
+  Math.round((new Date(date + "T00:00") - new Date(todayKey() + "T00:00")) / 86400000);
+
+function pruneEvents() {
+  events = events.filter(e => e.date && daysUntil(e.date) >= 0).slice(-5);
+  store.set("sty_events", events);
+}
+
+function eventSummaries() {
+  return events.map(e =>
+    `${e.occasion} on ${e.date} (${daysUntil(e.date)} days away), wants to ${e.vibe}${e.note ? ` — ${e.note}` : ""}`);
+}
+
+function renderEventChip() {
+  const chip = $("eventChip");
+  const next = [...events].sort((a, b) => a.date.localeCompare(b.date))[0];
+  if (!next || daysUntil(next.date) > 30) { chip.hidden = true; return; }
+  const d = daysUntil(next.date);
+  chip.innerHTML = `${icon("i-spark", "icon sm")}${esc(next.occasion)} ${d === 0 ? "— today!" : `in ${d} day${d === 1 ? "" : "s"}`}`;
+  chip.hidden = false;
+  chip.onclick = () => {
+    switchTab("chat");
+    const msg = d === 0
+      ? `My ${next.occasion} is TODAY. Final check — confirm the look and any last-minute fixes.`
+      : `My ${next.occasion} is in ${d} days (${next.date}). What should be done by now, and let's finalize the look — I want to ${next.vibe}.`;
+    if (streaming) { inputEl.value = msg; autosize(); }
+    else send(msg);
+  };
+}
+
+function readPillRow(name) {
+  const row = document.querySelector(`.pill-row[data-name="${name}"]`);
+  const on = [...row.querySelectorAll(".pill.on")].map(p => p.dataset.v);
+  return row.classList.contains("multi") ? on.join(", ") : on[0] || "";
+}
+
 function setGreeting(text) {
   if (text) $("feedGreeting").textContent = text; // roman display voice
 }
@@ -377,7 +415,10 @@ async function loadFeed(force) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         profile: prof,
-        context: { weather: weather || "unknown", loved: taste.loved, less: taste.less, avoid, quiz: quizAnswers },
+        context: {
+          weather: weather || "unknown", loved: taste.loved, less: taste.less,
+          avoid, quiz: quizAnswers, events: eventSummaries(),
+        },
       }),
     });
     if (!res.ok) {
@@ -1084,6 +1125,37 @@ $("profileForm").addEventListener("submit", e => {
   loadFeed(true);           // profile changed → fresh feed
 });
 
+// ---------- occasion studio wiring ----------
+const eventModal = $("eventModal");
+$("eventBtn").onclick = () => { eventModal.hidden = false; };
+$("eventClose").onclick = () => { eventModal.hidden = true; };
+eventModal.addEventListener("click", e => { if (e.target === eventModal) eventModal.hidden = true; });
+
+$("eventForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const occasion = readPillRow("evOccasion") || "special event";
+  const date = $("evDate").value;
+  const vibe = readPillRow("evVibe") || "stand out";
+  const note = $("evNote").value.trim();
+
+  if (date && daysUntil(date) >= 0) {
+    events = [...events.filter(ev => !(ev.occasion === occasion && ev.date === date)),
+              { occasion, date, vibe, note }].slice(-5);
+    store.set("sty_events", events);
+    renderEventChip();
+  }
+  eventModal.hidden = true;
+
+  const when = date
+    ? ` on ${date} — ${daysUntil(date)} days away`
+    : " coming up";
+  const msg = `I have a ${occasion}${when}. I want to ${vibe}.${note ? ` Venue/theme: ${note}.` : ""} ` +
+    `Build my full look — outfit, jewellery, footwear — and a quick prep timeline if anything needs tailoring.`;
+  switchTab("chat");
+  if (streaming) { inputEl.value = msg; autosize(); toast("Finishing the current reply — tap send"); }
+  else send(msg);
+});
+
 $("profileBtn").onclick = openModal;
 $("wipeBtn").onclick = () => {
   if (!confirm("Clear everything Stylist knows about you on this device? This removes your profile, taste, saved looks and chat history.")) return;
@@ -1131,6 +1203,8 @@ renderHistory();
 refreshSavedBadge();
 refreshTasteChip();
 renderDrops();
+pruneEvents();
+renderEventChip();
 if (!profile) openModal();
 else loadFeed(false);
 

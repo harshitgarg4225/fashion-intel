@@ -75,7 +75,9 @@
       <span id="weatherChip" class="weather-chip" hidden></span>
       <span id="tasteChip" class="weather-chip" hidden><svg class="icon sm"><use href="#i-check"/></svg>Tuned by your taste</span>
       <span id="feedProgress" class="weather-chip progress" hidden></span>
+      <button id="eventChip" class="refresh-btn event" hidden></button>
       <button id="refreshFeed" class="refresh-btn"><svg class="icon sm"><use href="#i-refresh"/></svg>New drop</button>
+      <button id="eventBtn" class="refresh-btn"><svg class="icon sm"><use href="#i-spark"/></svg>Dress me for an event</button>
     </div>
   </div>
   <div id="feedGrid" class="feed-grid"></div>
@@ -101,6 +103,7 @@
       <button class="starter" data-q="Build me a 5-day work capsule from ~8 pieces, zero repeats, minimal ironing">5-day work capsule 🗓️</button>
       <button class="starter" data-q="Straight from work to a dinner — upgrade my outfit with one swap">Desk to dinner ✨</button>
       <button class="starter" data-action="attach">Find something similar to a photo 📷</button>
+      <button class="starter" data-q="What's actually trending this week — filtered to what suits my style and age?">Trending, but make it me 🔥</button>
     </div>
   </div>
 
@@ -223,6 +226,47 @@
         <button type="button" id="wipeBtn" class="linklike">Clear my data</button></span>
       </div>
       <button type="submit" class="primary-btn">Build my feed</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ OCCASION STUDIO ============ -->
+<div id="eventModal" class="modal" hidden>
+  <div class="modal-card">
+    <button type="button" id="eventClose" class="modal-close" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    <p class="empty-kicker">Occasion studio</p>
+    <h2>Dress me for <em>an event</em></h2>
+    <p class="muted">Your stylist builds the full look — outfit, jewellery, footwear — plus a prep timeline.</p>
+    <form id="eventForm">
+      <div class="field">
+        <span>The occasion</span>
+        <div class="pill-row" data-name="evOccasion">
+          <button type="button" class="pill" data-v="wedding guest look">Wedding guest</button>
+          <button type="button" class="pill" data-v="sangeet / mehendi">Sangeet&nbsp;/&nbsp;mehendi</button>
+          <button type="button" class="pill" data-v="reception">Reception</button>
+          <button type="button" class="pill" data-v="festive / pooja">Festive&nbsp;/&nbsp;pooja</button>
+          <button type="button" class="pill" data-v="party night">Party night</button>
+          <button type="button" class="pill" data-v="date night">Date night</button>
+          <button type="button" class="pill" data-v="interview / big meeting">Big meeting</button>
+        </div>
+      </div>
+      <label class="field">
+        <span>When is it?</span>
+        <input type="date" id="evDate" class="text-input">
+      </label>
+      <div class="field">
+        <span>How do you want to land?</span>
+        <div class="pill-row" data-name="evVibe">
+          <button type="button" class="pill" data-v="blend in beautifully">Blend in beautifully</button>
+          <button type="button" class="pill" data-v="stand out">Stand out</button>
+          <button type="button" class="pill" data-v="steal the show">Steal the show</button>
+        </div>
+      </div>
+      <label class="field">
+        <span>Venue or theme? <small>(optional)</small></span>
+        <input type="text" id="evNote" class="text-input" placeholder="e.g. beach wedding, pastel theme, rooftop" maxlength="140">
+      </label>
+      <button type="submit" class="primary-btn">Style my event</button>
     </form>
   </div>
 </div>

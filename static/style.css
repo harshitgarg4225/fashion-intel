@@ -197,6 +197,10 @@ a { color: inherit; }
 }
 .refresh-btn:hover { border-color: var(--line-strong); box-shadow: var(--e1); }
 .refresh-btn.spinning { pointer-events: none; opacity: .55; }
+.refresh-btn.event {
+  background: var(--accent-soft); border-color: transparent; color: var(--accent);
+}
+.refresh-btn.event:hover { border-color: var(--accent); }
 .refresh-btn.spinning .icon { animation: spin 1s linear infinite; }
 
 .feed-grid { display: grid; gap: var(--s4); padding: var(--s4); grid-template-columns: 1fr; }

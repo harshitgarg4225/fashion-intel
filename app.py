@@ -96,6 +96,11 @@ when a fabric won't survive humidity, when a fit runs small.
 sarees, co-ords) where regionally natural.
 - Style every age with confidence — current, never juvenile, never matronly. \
 Never comment on her body; talk silhouettes, always positively.
+- When she wants to STAND OUT at an event, steer away from the predictable \
+choice — the shade and silhouette everyone will wear — and propose something \
+distinctive, with one line on why it reads unique in photos.
+- For a planned event, include a quick PREP TIMELINE when relevant (blouse \
+fitting, alterations, jewellery rental) working back from the date.
 
 Today's date: {today}.
 
@@ -158,7 +163,17 @@ def build_system(profile: dict) -> str:
         profile_text = "\n".join(lines) or "- (not provided yet)"
     else:
         profile_text = "- (not provided yet)"
-    return SYSTEM_TEMPLATE.format(today=today, profile=profile_text)
+    system = SYSTEM_TEMPLATE.format(today=today, profile=profile_text)
+    signals = peek_trends(str(profile.get("region", "India")) if profile else "India")
+    if signals:
+        system += (
+            "\n\nLive signals from her region this week (real searches and "
+            "fashion-community talk — cite only what's genuinely fashion-relevant "
+            "and suits her; when she wants to STAND OUT, use these to know what "
+            "everyone else will wear and steer her somewhere more distinctive):\n- "
+            + "\n- ".join(signals[:10])
+        )
+    return system
 
 
 # --- tiny in-memory per-IP rate limiter (protects the API bill) ---
@@ -386,7 +401,10 @@ week — when one is genuinely fashion-relevant, ground the WILDCARD (or one \
 collection) in it and nod to it in the tagline ("everyone's asking about…"); \
 ignore signals that aren't about style. If favourite brands are in the \
 profile, let their aesthetic inform silhouettes — never invent specific new \
-product launches.
+product launches. upcoming_events are REAL events on her calendar: when one \
+is within two weeks, let the WILDCARD serve it directly (countdown energy, \
+prep reminders like fittings in the tip) and let TODAY'S ANSWER nod to it \
+when timing matters.
 
 Field rules:
 - greeting: one decisive, time-aware line; use the person's name if given; nod \
@@ -463,6 +481,15 @@ async def get_live_trends(region: str) -> list[str]:
     terms = terms[:14]
     _trend_cache.update(at=now, region=region, terms=terms)
     return terms
+
+
+def peek_trends(region: str) -> list[str]:
+    """Cached trends only — never blocks. Chat uses this so a cold cache
+    costs zero latency (the feed warms it)."""
+    if (_trend_cache["region"] == region
+            and time.time() - _trend_cache["at"] < TREND_TTL_SECONDS):
+        return _trend_cache["terms"]
+    return []
 
 
 class FeedStreamParser:
@@ -560,6 +587,8 @@ async def feed(request: Request):
         ctx["avoid"] = []
     quiz = ctx.get("quiz") if isinstance(ctx.get("quiz"), dict) else {}
     quiz = {str(k)[:30]: str(v)[:60] for k, v in list(quiz.items())[:10]}
+    upcoming = ctx.get("events") if isinstance(ctx.get("events"), list) else []
+    upcoming = [str(e)[:110] for e in upcoming[:5]]
 
     live_signals = await get_live_trends(str(profile.get("region", "India")))
 
@@ -571,6 +600,7 @@ async def feed(request: Request):
         "less_of_this": [str(x)[:60] for x in ctx["less"][:8]],
         "style_answers": quiz,
         "live_signals": live_signals,
+        "upcoming_events": upcoming,
         "avoid_titles": [str(x)[:60] for x in ctx["avoid"][:20]],
     }
 
