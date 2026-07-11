@@ -92,8 +92,18 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", 
 function toast(msg) {
   toastEl.textContent = msg;
   toastEl.hidden = false;
+  toastEl.classList.remove("out");
+  void toastEl.offsetWidth;               // restart the entrance animation
   clearTimeout(toastEl._t);
-  toastEl._t = setTimeout(() => (toastEl.hidden = true), 2200);
+  toastEl._t = setTimeout(() => {
+    toastEl.classList.add("out");
+    toastEl.addEventListener("animationend", () => {
+      if (toastEl.classList.contains("out")) {
+        toastEl.hidden = true;
+        toastEl.classList.remove("out");
+      }
+    }, { once: true });
+  }, 2200);
 }
 
 function scrollToBottom(force) {
@@ -216,19 +226,28 @@ function placeFeedCard(c) {
   const card = wrap.firstElementChild;
   card.onclick = () => openSheet(collectionToLook(c));
   const sk = feedGrid.querySelector(".skeleton");
-  if (sk) feedGrid.replaceChild(card, sk);
-  else feedGrid.appendChild(card);
+  if (sk) {
+    // The tile resolves in place — only its text enters, no remove+re-enter.
+    card.classList.add("from-skeleton");
+    feedGrid.replaceChild(card, sk);
+  } else {
+    feedGrid.appendChild(card);
+  }
   hydrateImages(card);
+  return card;
 }
 
 function setGreeting(text) {
-  if (text) $("feedGreeting").innerHTML = `<em>${esc(text)}</em>`;
+  if (text) $("feedGreeting").textContent = text; // roman display voice
 }
 
 function renderFeed(data) {
   setGreeting(data.greeting);
   feedGrid.innerHTML = "";
-  (data.collections || []).forEach(placeFeedCard);
+  (data.collections || []).forEach((c, i) => {
+    // Cached path renders synchronously — choreograph the entrance.
+    placeFeedCard(c).style.animationDelay = `${Math.min(i * 60, 300)}ms`;
+  });
 }
 
 function rememberShown(collections) {
@@ -338,6 +357,7 @@ $("refreshFeed").onclick = () => loadFeed(true);
 
 // ---------- look sheet ----------
 function openSheet(look) {
+  sheetEl.classList.remove("closing"); // cancels any in-flight close
   currentLook = look;
   const seed = hashSeed(look.title + todayKey());
   const items = (look.items || []).map((item, i) => {
@@ -447,19 +467,38 @@ function pushTaste(kind, look) {
 }
 
 function closeSheet() {
-  sheetEl.hidden = true;
+  if (sheetEl.hidden || sheetEl.classList.contains("closing")) return;
   document.body.style.overflow = "";
   currentLook = null;
+  sheetEl.classList.add("closing");
+  const finish = () => {
+    if (!sheetEl.classList.contains("closing")) return; // reopened mid-close
+    sheetEl.hidden = true;
+    sheetEl.classList.remove("closing");
+  };
+  sheetEl.querySelector(".sheet-card").addEventListener("animationend", finish, { once: true });
+  setTimeout(finish, 400); // safety net — finish is idempotent
 }
 sheetEl.addEventListener("click", e => { if (e.target.closest("[data-close]")) closeSheet(); });
+function closeModal() {
+  if (modal.hidden || modal.classList.contains("closing")) return;
+  modal.classList.add("closing");
+  const finish = () => {
+    if (!modal.classList.contains("closing")) return; // reopened mid-close
+    modal.hidden = true;
+    modal.classList.remove("closing");
+  };
+  modal.querySelector(".modal-card").addEventListener("animationend", finish, { once: true });
+  setTimeout(finish, 300); // safety net — finish is idempotent
+}
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (!sheetEl.hidden) closeSheet();
-  else if (!modal.hidden && profile) modal.hidden = true;
+  else if (!modal.hidden && profile) closeModal();
 });
-$("modalClose").onclick = () => { modal.hidden = true; };
+$("modalClose").onclick = closeModal;
 modal.addEventListener("click", e => {
-  if (e.target === modal && profile) modal.hidden = true;   // backdrop dismiss
+  if (e.target === modal && profile) closeModal();   // backdrop dismiss
 });
 
 // ---------- assistant message parsing ----------
@@ -789,6 +828,7 @@ document.querySelectorAll(".starter").forEach(b => (b.onclick = () => send(b.dat
 
 // ---------- profile modal ----------
 function openModal() {
+  modal.classList.remove("closing"); // cancels any in-flight close
   modal.hidden = false;
   // First run must complete the quiz; returning users can dismiss.
   $("modalClose").hidden = !profile;
@@ -833,7 +873,7 @@ $("profileForm").addEventListener("submit", e => {
     notes: $("notesInput").value.trim(),
   };
   store.set("sty_profile", profile);
-  modal.hidden = true;
+  closeModal();
   toast("Profile saved — styling everything to you");
   // Re-rendering mid-stream would detach the live reply's DOM node —
   // skip it; region-link refresh happens on the next natural render.
