@@ -282,7 +282,9 @@ user's style a notch. Never repeat a silhouette or color story across cards.
 Tailor everything to the user profile: gender presentation, region (climate, \
 culture, local pricing in local currency — include ethnic/fusion pieces where \
 regionally natural), budget level, style vibes, fit notes. Respect "loved" \
-signals and avoid "less of this" signals.
+signals and avoid "less of this" signals. style_answers are direct quiz \
+answers from the user — treat them as strong, explicit preferences (colour \
+leanings, fit, footwear, prints, accessories, layering).
 
 Field rules:
 - greeting: short and warm; use the person's name if given; nod to the day or \
@@ -398,6 +400,8 @@ async def feed(request: Request):
         ctx["less"] = []
     if not isinstance(ctx.get("avoid"), list):
         ctx["avoid"] = []
+    quiz = ctx.get("quiz") if isinstance(ctx.get("quiz"), dict) else {}
+    quiz = {str(k)[:30]: str(v)[:60] for k, v in list(quiz.items())[:10]}
 
     brief = {
         "date": time.strftime("%A, %d %B %Y"),
@@ -405,6 +409,7 @@ async def feed(request: Request):
         "weather": str(ctx.get("weather", "unknown"))[:120],
         "loved": [str(x)[:60] for x in ctx["loved"][:8]],
         "less_of_this": [str(x)[:60] for x in ctx["less"][:8]],
+        "style_answers": quiz,
         "avoid_titles": [str(x)[:60] for x in ctx["avoid"][:20]],
     }
 

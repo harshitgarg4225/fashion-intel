@@ -37,6 +37,9 @@
   <symbol id="i-glasses" viewBox="0 0 24 24"><circle cx="7.5" cy="14.5" r="3.3"/><circle cx="16.5" cy="14.5" r="3.3"/><path d="M10.8 14.5h2.4M4.2 14.5 3 9.5M19.8 14.5 21 9.5"/></symbol>
   <symbol id="i-dress" viewBox="0 0 24 24"><path d="M9 3l3 3.2L15 3l1 3.8-1.8 3L17.5 20h-11l3.3-10.2-1.8-3L9 3Z"/></symbol>
   <symbol id="i-bag" viewBox="0 0 24 24"><path d="M8.5 9V7a3.5 3.5 0 0 1 7 0v2"/><rect x="4.5" y="9" width="15" height="11" rx="2.5"/></symbol>
+  <symbol id="i-less" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12h7"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
 </svg>
 
 <header class="topbar">
@@ -62,6 +65,8 @@
     <h2 id="feedGreeting" class="feed-greeting">Dressing you<br><em>by the day</em></h2>
     <div class="feed-meta">
       <span id="weatherChip" class="weather-chip" hidden></span>
+      <span id="tasteChip" class="weather-chip" hidden><svg class="icon sm"><use href="#i-check"/></svg>Tuned by your taste</span>
+      <span id="feedProgress" class="weather-chip progress" hidden></span>
       <button id="refreshFeed" class="refresh-btn"><svg class="icon sm"><use href="#i-refresh"/></svg>New drop</button>
     </div>
   </div>
@@ -169,6 +174,11 @@
         <span>Anything else? <small>(fit, sizes, colors you avoid…)</small></span>
         <input type="text" id="notesInput" class="text-input" placeholder="e.g. slim fit, size M, no bright yellow" maxlength="180">
       </label>
+      <div class="trust-box">
+        <svg class="icon"><use href="#i-lock"/></svg>
+        <span><b>Private by design.</b> Your profile, taste and saved looks live only on this device — no account, no selfie, no tracking.
+        <button type="button" id="wipeBtn" class="linklike">Clear my data</button></span>
+      </div>
       <button type="submit" class="primary-btn">Build my feed</button>
     </form>
   </div>

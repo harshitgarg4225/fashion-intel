@@ -209,17 +209,30 @@ function feedCardHTML(c) {
   const dots = (c.palette || []).slice(0, 4)
     .filter(p => /^#[0-9a-fA-F]{3,8}$/.test(String(p)))
     .map(p => `<span class="dot" style="background:${esc(p)}"></span>`).join("");
-  return `<button class="feed-card" aria-label="Open look: ${esc(c.title)}">
+  const first = (c.items || [])[0];
+  const more = Math.max(0, (c.items || []).length - 1);
+  // price leads (never truncates); the item name absorbs the ellipsis
+  const chip = first
+    ? `<span class="card-chip">${icon(CAT_ICON[first.category] || CAT_ICON.other, "icon sm")}${first.price ? `${esc(first.price)} · ` : ""}${esc(first.name)}${more ? ` +${more}` : ""}</span>`
+    : "";
+  const savedNow = isSaved(collectionToLook(c));
+  // note: the card itself is an <article>, not a <button> — it hosts buttons
+  return `<article class="feed-card" role="button" tabindex="0" aria-label="Open look: ${esc(c.title)}">
     <div class="card-bg" style="background:${paletteGradient(c.palette)}"></div>
     <img class="card-img" data-hydrate loading="lazy" alt="" src="${esc(heroURL(c.image_prompt || c.title, seed))}">
     <div class="card-scrim"></div>
+    ${chip}
+    <div class="card-actions">
+      <button class="card-act${savedNow ? " on" : ""}" data-card-save aria-label="Save look">${heartIcon(savedNow)}</button>
+      <button class="card-act" data-card-less aria-label="Less like this">${icon("i-less")}</button>
+    </div>
     <div class="card-text">
       <p class="card-kicker">${esc(c.occasion || "")}</p>
       <h3 class="card-title">${esc(c.title)}</h3>
       <p class="card-tagline">${esc(c.tagline || "")}</p>
       <div class="card-foot">${dots}<span class="card-cta">Shop the look${icon("i-arrow-r", "icon sm")}</span></div>
     </div>
-  </button>`;
+  </article>`;
 }
 
 // Append one card, consuming a skeleton slot if one is waiting.
@@ -227,7 +240,42 @@ function placeFeedCard(c) {
   const wrap = document.createElement("div");
   wrap.innerHTML = feedCardHTML(c);
   const card = wrap.firstElementChild;
-  card.onclick = () => openSheet(collectionToLook(c));
+  card.addEventListener("click", e => {
+    const saveBtn = e.target.closest("[data-card-save]");
+    const lessBtn = e.target.closest("[data-card-less]");
+    if (saveBtn) {
+      e.stopPropagation();
+      const look = collectionToLook(c);
+      if (isSaved(look)) {
+        saved = saved.filter(s => lookKey(s) !== lookKey(look));
+        saveBtn.classList.remove("on");
+        saveBtn.innerHTML = heartIcon(false);
+        toast("Removed from saved");
+      } else {
+        saved.push(look);
+        pushTaste("loved", look);
+        saveBtn.classList.add("on");
+        saveBtn.innerHTML = heartIcon(true);
+        toast("Saved to your looks");
+      }
+      store.set("sty_saved", saved);
+      refreshSavedBadge();
+      return;
+    }
+    if (lessBtn) {
+      e.stopPropagation();
+      pushTaste("less", collectionToLook(c));
+      toast("Got it — dialing this down");
+      return;
+    }
+    openSheet(collectionToLook(c));
+  });
+  card.addEventListener("keydown", e => {
+    if ((e.key === "Enter" || e.key === " ") && e.target === card) {
+      e.preventDefault();
+      openSheet(collectionToLook(c));
+    }
+  });
   const sk = feedGrid.querySelector(".skeleton");
   if (sk) {
     // The tile resolves in place — only its text enters, no remove+re-enter.
@@ -238,6 +286,43 @@ function placeFeedCard(c) {
   }
   hydrateImages(card);
   return card;
+}
+
+// ---------- inline style quiz (progressive profiling, zero model cost) ----------
+const QUIZ_BANK = [
+  { id: "colours", q: "Which colours do you reach for most?", opts: ["Earth tones", "Monochrome", "Blues & navy", "Brights"] },
+  { id: "fit", q: "How do you like your fit?", opts: ["Relaxed everywhere", "Tailored up top", "Slim throughout", "Oversized statement"] },
+  { id: "footwear", q: "Your default footwear?", opts: ["White sneakers", "Loafers", "Sandals", "Boots"] },
+  { id: "prints", q: "Prints or plains?", opts: ["Plains mostly", "Subtle textures", "Stripes & checks", "Bold prints"] },
+  { id: "accessories", q: "Accessories level?", opts: ["Minimal — a watch", "A ring or a chain", "Layered up", "Depends on the day"] },
+  { id: "layering", q: "Layers — yes or no?", opts: ["Love layering", "Only in winter", "Too hot for that", "Show me how"] },
+];
+let quizAnswers = store.get("sty_quiz", {});
+
+function maybeInsertQuiz() {
+  if (feedGrid.querySelector(".quiz-card")) return;
+  const next = QUIZ_BANK.find(q => !(q.id in quizAnswers));
+  if (!next) return;
+  const el = document.createElement("article");
+  el.className = "quiz-card";
+  el.innerHTML = `<p class="quiz-kicker">Style quotient</p>
+    <h3 class="quiz-q">${esc(next.q)}</h3>
+    <div class="quiz-options">${next.opts.map(o => `<button class="pill" data-q="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
+  el.addEventListener("click", e => {
+    const b = e.target.closest("[data-q]");
+    if (!b) return;
+    quizAnswers[next.id] = b.dataset.q;
+    store.set("sty_quiz", quizAnswers);
+    el.innerHTML = `<p class="quiz-kicker">Style quotient</p>
+      <h3 class="quiz-q">${esc(b.dataset.q)}</h3>
+      <div class="quiz-done">${icon("i-check")}<span>Noted — your next edit gets sharper.</span></div>`;
+    refreshTasteChip();
+  });
+  feedGrid.insertBefore(el, feedGrid.children[2] || null);
+}
+
+function refreshTasteChip() {
+  $("tasteChip").hidden = !(taste.loved.length || taste.less.length || Object.keys(quizAnswers).length);
 }
 
 function setGreeting(text) {
@@ -251,6 +336,7 @@ function renderFeed(data) {
     // Cached path renders synchronously — choreograph the entrance.
     placeFeedCard(c).style.animationDelay = `${Math.min(i * 60, 300)}ms`;
   });
+  maybeInsertQuiz();
 }
 
 function rememberShown(collections) {
@@ -289,7 +375,7 @@ async function loadFeed(force) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         profile: prof,
-        context: { weather: weather || "unknown", loved: taste.loved, less: taste.less, avoid },
+        context: { weather: weather || "unknown", loved: taste.loved, less: taste.less, avoid, quiz: quizAnswers },
       }),
     });
     if (!res.ok) {
@@ -319,6 +405,9 @@ async function loadFeed(force) {
         } else if (payload.type === "collection") {
           data.collections.push(payload.data);
           placeFeedCard(payload.data);
+          const p = $("feedProgress");
+          p.textContent = `Styling look ${Math.min(data.collections.length, 5)} of 5…`;
+          p.hidden = false;
         } else if (payload.type === "error") {
           throw new Error(payload.error);
         } else if (payload.type === "done") {
@@ -331,6 +420,7 @@ async function loadFeed(force) {
     feedGrid.querySelectorAll(".skeleton").forEach(s => s.remove());
     store.set("sty_feed", { date: todayKey(), sig, data, weather });
     rememberShown(data.collections);
+    maybeInsertQuiz();
   } catch (err) {
     if (data.collections.length) {
       // Partial feed arrived before the failure — keep it, don't wipe it.
@@ -347,6 +437,7 @@ async function loadFeed(force) {
   }
   feedLoading = false;
   $("refreshFeed").classList.remove("spinning");
+  $("feedProgress").hidden = true;
   if (profileSig() !== sig) loadFeed(true);  // profile changed mid-flight
 }
 
@@ -386,6 +477,22 @@ function openSheet(look) {
     </div>`;
   }).join("");
 
+  // "More from today's edit" — navigate between the day's looks in place.
+  const feedCache = store.get("sty_feed", null);
+  const others = feedCache
+    ? (feedCache.data.collections || []).filter(x => x.title !== look.title).slice(0, 6)
+    : [];
+  const rail = others.length ? `
+    <p class="sheet-section">More from today's edit</p>
+    <div class="rail">${others.map((o, i) => `
+      <button class="rail-card" data-rail="${i}" aria-label="Open look: ${esc(o.title)}">
+        <div class="card-bg" style="position:absolute;inset:0;background:${paletteGradient(o.palette)}"></div>
+        <img class="card-img" data-hydrate loading="lazy" alt="" src="${esc(heroURL(o.image_prompt || o.title, hashSeed(o.title + todayKey()), 384, 480))}">
+        <div class="card-scrim"></div>
+        <span class="rail-title">${esc(o.title)}</span>
+      </button>`).join("")}
+    </div>` : "";
+
   const savedNow = isSaved(look);
   $("sheetBody").innerHTML = `
     <div class="sheet-hero">
@@ -402,6 +509,7 @@ function openSheet(look) {
       ${look.tip ? `<div class="tip-box">${icon("i-spark")}<span><b>Stylist's tip</b> — ${esc(look.tip)}</span></div>` : ""}
       <p class="sheet-section">The pieces</p>
       ${items}
+      ${rail}
       <div class="taste-row">
         <button class="taste-btn" id="tasteMore">More like this</button>
         <button class="taste-btn" id="tasteLess">Less like this</button>
@@ -414,9 +522,13 @@ function openSheet(look) {
     </div>`;
   sheetEl.hidden = false;
   document.body.style.overflow = "hidden";
+  sheetEl.querySelector(".sheet-card").scrollTop = 0;
   hydrateImages($("sheetBody"));
   const closeBtn = sheetEl.querySelector(".sheet-close");
   if (closeBtn) closeBtn.focus({ preventScroll: true });
+  $("sheetBody").querySelectorAll("[data-rail]").forEach(b => {
+    b.onclick = () => openSheet(collectionToLook(others[+b.dataset.rail]));
+  });
 
   $("sheetSave").onclick = e => {
     const btn = e.currentTarget;
@@ -467,6 +579,7 @@ function pushTaste(kind, look) {
   const tag = `${look.title} (${look.occasion || ""})`.slice(0, 60);
   taste[kind] = [...new Set([tag, ...taste[kind]])].slice(0, 8);
   store.set("sty_taste", taste);
+  refreshTasteChip();
 }
 
 function closeSheet() {
@@ -885,6 +998,11 @@ $("profileForm").addEventListener("submit", e => {
 });
 
 $("profileBtn").onclick = openModal;
+$("wipeBtn").onclick = () => {
+  if (!confirm("Clear everything Stylist knows about you on this device? This removes your profile, taste, saved looks and chat history.")) return;
+  localStorage.clear();
+  location.reload();
+};
 $("newChatBtn").onclick = () => {
   chatGen++;                                // invalidate any in-flight reply
   if (streaming && abortCtrl) abortCtrl.abort();
@@ -924,6 +1042,7 @@ $("newChatBtn").onclick = () => {
 // ---------- boot ----------
 renderHistory();
 refreshSavedBadge();
+refreshTasteChip();
 if (!profile) openModal();
 else loadFeed(false);
 
