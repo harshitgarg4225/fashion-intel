@@ -1,8 +1,10 @@
-# Stylist — your AI fashion feed
+# Stylist — dressed for work in one tap
 
-A visual-first personal styling product (think Glance AI's loop — personalized looks → shop the look), built to be the **cheapest possible thing to run** while keeping a magazine-grade UX.
+An AI stylist for **busy working professionals**: every morning the feed opens with one decisive answer — *wear this today* — tuned to the weather, your dress code, and your taste. Built on Glance AI's loop (personalized looks → shop the look) at the **cheapest possible running cost** with a magazine-grade UX.
 
 **Try it:** deploy to Railway (below), open the URL on your phone, answer the 30-second style quiz, and your daily feed builds itself.
+
+The five daily collections are structured for the working week: **Today's answer** (decided for you), **High stakes** (client/boardroom), **After hours** (desk to dinner, one swap), **Weekend reset**, and a **Wildcard**. Chat starters match ("What do I wear today?", "5-day office capsule", "3-day business trip, one cabin bag"). You can also **photograph any outfit or product** and the stylist identifies the pieces and makes them shoppable (Claude vision, ~$0.002/photo).
 
 ## What it does
 
@@ -61,6 +63,15 @@ The daily feed is **one model call per user per day** (cached client-side; refre
 | `CLAUDE_MODEL` | `claude-haiku-4-5` | Set `claude-sonnet-5` or `claude-opus-4-8` for noticeably better styling judgment at ~3–5× the token price. |
 | `MAX_TOKENS` | `2048` | Per-reply output cap. |
 | `RATE_LIMIT_PER_HOUR` | `40` | Per-IP request cap. |
+
+## Production posture
+
+- **Security headers** on every response: CSP (self + the four external origins the app actually uses), `X-Frame-Options: DENY`, `nosniff`, referrer and permissions policies. No inline scripts anywhere; API docs endpoints disabled.
+- **Payload cap** (413 above ~6.5MB) so photo uploads can't be abused; images are validated server-side (type + size) and never stored.
+- **Cache policy**: static assets 1h, HTML/service-worker `no-cache`; SW adds offline app-shell.
+- **Pinned dependencies** (`requirements.txt` uses exact versions).
+- **Stateless by design**: restarts and horizontal scaling are safe — there is no server-side session state to lose. (The in-memory rate limiter is per-instance; put a shared limiter in front if you scale past one instance.)
+- Real icons + OG card for link sharing (`/static/og.png`).
 
 ## Run locally
 

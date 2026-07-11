@@ -430,10 +430,13 @@ async function loadFeed(force) {
       rememberShown(data.collections);
       toast("Some looks didn't make it — refresh for more");
     } else {
+      // no inline handlers — CSP (script-src 'self') forbids them
       feedGrid.innerHTML = `<div class="feed-error">
         <p>${esc(err.message || "Couldn't load your feed.")}</p>
-        <button class="refresh-btn" onclick="document.getElementById('refreshFeed').click()">Try again</button>
+        <button class="refresh-btn" id="feedRetry">Try again</button>
       </div>`;
+      const retry = $("feedRetry");
+      if (retry) retry.onclick = () => loadFeed(true);
     }
   }
   feedLoading = false;
@@ -1003,7 +1006,8 @@ function openModal() {
   // First run must complete the quiz; returning users can dismiss.
   $("modalClose").hidden = !profile;
   // Smart defaults on first run — one tap to a working feed.
-  const defaults = profile ? null : { region: "India", budget: "mid-range, quality basics" };
+  const defaults = profile ? null
+    : { region: "India", budget: "mid-range, quality basics", dresscode: "business casual" };
   document.querySelectorAll(".pill-row").forEach(row => {
     const name = row.dataset.name;
     const current = profile ? profile[name] : (defaults && defaults[name]) || null;
@@ -1038,6 +1042,7 @@ $("profileForm").addEventListener("submit", e => {
     name: $("nameInput").value.trim(),
     gender: read("gender") || "no preference",
     region: read("region") || "India",
+    dresscode: read("dresscode") || "business casual",
     budget: read("budget") || "mid-range, quality basics",
     style: read("style") || "open to suggestions",
     notes: $("notesInput").value.trim(),

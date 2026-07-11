@@ -27,7 +27,8 @@ import re
 
 import anthropic
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5")
@@ -41,11 +42,49 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Async client: streaming replies don't pin a threadpool thread each,
 # so one small instance can hold many concurrent streams.
 client = anthropic.AsyncAnthropic()
-app = FastAPI(title="Stylist")
+app = FastAPI(title="Stylist", docs_url=None, redoc_url=None, openapi_url=None)
+
+MAX_BODY_BYTES = 6_500_000  # ~4MB base64 image + headroom
+
+CSP = (
+    "default-src 'self'; "
+    "img-src 'self' data: https://image.pollinations.ai; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src https://fonts.gstatic.com; "
+    "connect-src 'self' https://api.open-meteo.com; "
+    "worker-src 'self'; "
+    "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+)
+
+
+@app.middleware("http")
+async def hardening(request: Request, call_next):
+    if request.method == "POST":
+        try:
+            if int(request.headers.get("content-length", "0")) > MAX_BODY_BYTES:
+                return JSONResponse({"error": "That photo is too large — try a smaller one."},
+                                    status_code=413)
+        except ValueError:
+            pass
+    resp = await call_next(request)
+    h = resp.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("Permissions-Policy", "geolocation=(self), microphone=(self), camera=()")
+    h.setdefault("Content-Security-Policy", CSP)
+    path = request.url.path
+    if path.startswith("/static/"):
+        h.setdefault("Cache-Control", "public, max-age=3600")
+    elif path in ("/", "/sw.js"):
+        h.setdefault("Cache-Control", "no-cache")
+    return resp
 
 SYSTEM_TEMPLATE = """\
-You are Stylist — a sharp, warm personal fashion stylist and shopping assistant. \
-You talk like a stylish friend with great taste: confident, specific, zero filler.
+You are Stylist — a sharp, warm personal fashion stylist and shopping assistant \
+for busy working professionals. You talk like a stylish friend with great taste: \
+confident, specific, zero filler. Your user has minutes, not hours — lead with \
+the answer, decide for them, and keep alternatives to one line.
 
 Today's date: {today}.
 
@@ -293,12 +332,20 @@ FEED_SCHEMA = {
 
 FEED_SYSTEM = """\
 You are the curation engine of Stylist — you produce a daily, deeply personal \
-visual fashion feed, like the cover wall of a magazine made for one person.
+visual fashion feed for a busy working professional who has minutes, not hours. \
+Decide for them; they can always push back in chat.
 
-Produce EXACTLY 5 collections. Across the five, cover: (1) today's weather and \
-season, (2) work / daytime, (3) an evening or social occasion, (4) relaxed \
-weekend, and (5) one adventurous trend-forward wildcard that stretches the \
-user's style a notch. Never repeat a silhouette or color story across cards.
+Produce EXACTLY 5 collections:
+1. TODAY'S ANSWER — exactly what to wear to work today, given the weather, the \
+day of the week, and their dress code. Decisive, zero hedging: this is the \
+outfit. Tagline states why it wins today in one line.
+2. HIGH STAKES — a client-facing / boardroom / big-meeting look that reads \
+authoritative without trying.
+3. AFTER HOURS — desk to dinner or drinks with minimal change (one swap max).
+4. WEEKEND RESET — off-duty ease that still looks decided.
+5. WILDCARD — travel, an occasion on the horizon, or one trend worth their \
+time. Stretch their style a notch.
+Never repeat a silhouette or color story across cards.
 
 Tailor everything to the user profile: gender presentation, region (climate, \
 culture, local pricing in local currency — include ethnic/fusion pieces where \
@@ -312,8 +359,8 @@ Hour"), say in the tagline why that shade works for them, and build every \
 piece inside that colour family.
 
 Field rules:
-- greeting: short and warm; use the person's name if given; nod to the day or \
-weather. No emoji.
+- greeting: one decisive, time-aware line; use the person's name if given; nod \
+to the day or weather. They have 30 seconds — no filler, no emoji.
 - title: 2–4 evocative words, magazine-cover energy. Must not repeat any title \
 in avoid_titles.
 - tagline: one sharp sentence of intent.
@@ -496,6 +543,11 @@ def index():
 def service_worker():
     # Served from the root so the service worker can control the whole app.
     return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
+
+
+@app.get("/robots.txt")
+def robots():
+    return PlainTextResponse("User-agent: *\nAllow: /\n")
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

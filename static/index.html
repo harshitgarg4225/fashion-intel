@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f6f2ea">
-<title>Stylist — your AI fashion feed</title>
+<title>Stylist — dressed for work in one tap</title>
+<meta name="description" content="Your AI stylist for the working week. One decisive outfit for today — weather-aware, dress-code-aware, shoppable in one tap. Private by design.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Stylist — dressed for work in one tap">
+<meta property="og:description" content="Your AI stylist for the working week. One decisive outfit for today — weather-aware, shoppable in one tap.">
+<meta property="og:image" content="/static/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/static/manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
@@ -83,12 +90,12 @@
     <p class="empty-kicker">Your personal stylist</p>
     <h2>What are we<br><em>dressing for?</em></h2>
     <div class="starter-grid">
-      <button class="starter" data-q="Style me a smart-casual office look for this week's weather">Office look for this week ☔</button>
-      <button class="starter" data-q="I have a date this weekend — put together something effortless but sharp">Weekend date night ✨</button>
-      <button class="starter" data-q="Build me a 5-piece travel capsule that all mixes and matches">Travel capsule ✈️</button>
-      <button class="starter" data-q="I'm attending a wedding as a guest — what should I wear?">Wedding guest 💍</button>
-      <button class="starter" data-q="Refresh my basics under a tight budget — what are the essential pieces?">Budget basics refresh 💸</button>
-      <button class="starter" data-q="Find me versatile white sneakers that go with everything">Perfect white sneakers 👟</button>
+      <button class="starter" data-q="What should I wear to work today? Decide for me — one outfit, no options.">What do I wear today? ⚡</button>
+      <button class="starter" data-q="Big client meeting tomorrow — I need to look sharp and credible. One decisive look.">Client meeting tomorrow 🤝</button>
+      <button class="starter" data-q="Build me a 5-day office capsule from ~8 pieces, zero repeats, minimal ironing">5-day office capsule 🗓️</button>
+      <button class="starter" data-q="Pack me for a 3-day business trip in one cabin bag — meetings by day, dinners at night">3-day business trip 🧳</button>
+      <button class="starter" data-q="Video calls all day — make me look sharp on camera, comfortable off it">Video-call sharp 🎥</button>
+      <button class="starter" data-q="Straight from the office to a dinner — upgrade my work outfit with one swap">Desk to dinner ✨</button>
     </div>
   </div>
 
@@ -157,6 +164,15 @@
           <button type="button" class="pill" data-v="United States">US</button>
           <button type="button" class="pill" data-v="United Kingdom">UK</button>
           <button type="button" class="pill" data-v="Other / Global">Other</button>
+        </div>
+      </div>
+      <div class="field">
+        <span>Work dress code</span>
+        <div class="pill-row" data-name="dresscode">
+          <button type="button" class="pill" data-v="business formal">Business formal</button>
+          <button type="button" class="pill" data-v="business casual">Business casual</button>
+          <button type="button" class="pill" data-v="smart casual office">Smart casual</button>
+          <button type="button" class="pill" data-v="no dress code">No dress code</button>
         </div>
       </div>
       <div class="field">
