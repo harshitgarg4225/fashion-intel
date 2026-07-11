@@ -16,19 +16,42 @@
 </head>
 <body>
 
+<!-- icon sprite: 24x24 line icons, 1.8 stroke -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-spark" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2.5l2.1 6.3 6.4 2.1-6.4 2.1L12 19.3 9.9 13 3.5 10.9 9.9 8.8 12 2.5Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h8M18 7h2M4 17h2M12 17h8"/><circle cx="15" cy="7" r="2.4"/><circle cx="9" cy="17" r="2.4"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.3S4.8 15.9 3.1 11.6a5.2 5.2 0 0 1 8.9-5 5.2 5.2 0 0 1 8.9 5C19.2 15.9 12 20.3 12 20.3Z"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 14V4M8.5 7L12 3.5 15.5 7M6 11v9h12v-9"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.2 6.5M20 5v6h-6"/></symbol>
+  <symbol id="i-arrow-r" viewBox="0 0 24 24"><path d="M4 12h16M13 5l7 7-7 7"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 17L17 7M9.5 7H17v7.5"/></symbol>
+  <symbol id="i-shirt" viewBox="0 0 24 24"><path d="M8.5 4L4 6.8l1.8 3 2.2-1.2V20h8V8.6l2.2 1.2 1.8-3L15.5 4a3.5 3.5 0 0 1-7 0Z"/></symbol>
+  <symbol id="i-pants" viewBox="0 0 24 24"><path d="M7.5 4h9l1 16h-4.6L12 12.5 11.1 20H6.5l1-16ZM7.5 8h9"/></symbol>
+  <symbol id="i-coat" viewBox="0 0 24 24"><path d="M9 4h6l4 2.6-1 4.2-2-.9V20H8V9.9l-2 .9-1-4.2L9 4ZM12 6.5V20"/></symbol>
+  <symbol id="i-shoe" viewBox="0 0 24 24"><path d="M4 15c5.5 0 7.6-2.6 8.6-4.6l2.2 2.1c1.9 1.8 5.2 1.7 5.2 3.7V18H4v-3ZM4 18h16"/></symbol>
+  <symbol id="i-glasses" viewBox="0 0 24 24"><circle cx="7.5" cy="14.5" r="3.3"/><circle cx="16.5" cy="14.5" r="3.3"/><path d="M10.8 14.5h2.4M4.2 14.5 3 9.5M19.8 14.5 21 9.5"/></symbol>
+  <symbol id="i-dress" viewBox="0 0 24 24"><path d="M9 3l3 3.2L15 3l1 3.8-1.8 3L17.5 20h-11l3.3-10.2-1.8-3L9 3Z"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M8.5 9V7a3.5 3.5 0 0 1 7 0v2"/><rect x="4.5" y="9" width="15" height="11" rx="2.5"/></symbol>
+</svg>
+
 <header class="topbar">
   <div class="brand">
-    <span class="brand-mark">✦</span>
+    <span class="brand-mark"><svg class="icon"><use href="#i-spark"/></svg></span>
     <h1>Stylist</h1>
   </div>
   <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="feed" role="tab">For&nbsp;You</button>
+    <button class="tab active" data-tab="feed" role="tab">For&nbsp;you</button>
     <button class="tab" data-tab="chat" role="tab">Stylist</button>
     <button class="tab" data-tab="saved" role="tab">Saved <span id="savedCount" class="count" hidden></span></button>
   </nav>
   <div class="topbar-actions">
-    <button id="newChatBtn" class="icon-btn" title="New chat" aria-label="New chat">＋</button>
-    <button id="profileBtn" class="icon-btn" title="Edit style profile" aria-label="Edit style profile">☰</button>
+    <button id="newChatBtn" class="icon-btn" title="New chat" aria-label="New chat"><svg class="icon"><use href="#i-plus"/></svg></button>
+    <button id="profileBtn" class="icon-btn" title="Edit style profile" aria-label="Edit style profile"><svg class="icon"><use href="#i-sliders"/></svg></button>
   </div>
 </header>
 
@@ -39,7 +62,7 @@
     <h2 id="feedGreeting" class="feed-greeting">Dressing you<br><em>by the day</em></h2>
     <div class="feed-meta">
       <span id="weatherChip" class="weather-chip" hidden></span>
-      <button id="refreshFeed" class="refresh-btn">↻ New drop</button>
+      <button id="refreshFeed" class="refresh-btn"><svg class="icon sm"><use href="#i-refresh"/></svg>New drop</button>
     </div>
   </div>
   <div id="feedGrid" class="feed-grid"></div>
@@ -67,9 +90,9 @@
     <div id="chips" class="chips"></div>
     <form id="composer" class="composer">
       <textarea id="input" rows="1" placeholder="Ask your stylist anything…" enterkeyhint="send"></textarea>
-      <button id="micBtn" type="button" class="mic-btn" aria-label="Speak your request" hidden>🎙</button>
-      <button id="sendBtn" type="submit" class="send-btn" aria-label="Send">↑</button>
-      <button id="stopBtn" type="button" class="send-btn stop" aria-label="Stop" hidden>■</button>
+      <button id="micBtn" type="button" class="mic-btn" aria-label="Speak your request" hidden><svg class="icon"><use href="#i-mic"/></svg></button>
+      <button id="sendBtn" type="submit" class="send-btn" aria-label="Send"><svg class="icon"><use href="#i-arrow-up"/></svg></button>
+      <button id="stopBtn" type="button" class="send-btn stop" aria-label="Stop" hidden><svg class="icon"><use href="#i-stop"/></svg></button>
     </form>
     <p class="fineprint">Links open retailer searches — prices &amp; stock live on the store.</p>
   </div>
@@ -88,7 +111,8 @@
 <div id="sheet" class="sheet" hidden>
   <div class="sheet-backdrop" data-close></div>
   <div class="sheet-card" role="dialog" aria-modal="true">
-    <button class="sheet-close" data-close aria-label="Close">✕</button>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <button class="sheet-close" data-close aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
     <div id="sheetBody"></div>
   </div>
 </div>
@@ -96,7 +120,7 @@
 <!-- ============ ONBOARDING / PROFILE ============ -->
 <div id="modal" class="modal" hidden>
   <div class="modal-card">
-    <button type="button" id="modalClose" class="modal-close" aria-label="Close" hidden>✕</button>
+    <button type="button" id="modalClose" class="modal-close" aria-label="Close" hidden><svg class="icon"><use href="#i-x"/></svg></button>
     <p class="empty-kicker">Style profile</p>
     <h2>Make it <em>yours</em></h2>
     <p class="muted">30 seconds — your feed and stylist are built from this. Everything stays on your device.</p>

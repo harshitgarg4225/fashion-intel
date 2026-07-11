@@ -51,9 +51,11 @@ const RETAILERS = {
 const retailersFor = () => RETAILERS[(profile && profile.region) || "India"] || RETAILERS["Other / Global"];
 
 const CAT_ICON = {
-  top: "👕", bottom: "👖", outerwear: "🧥", footwear: "👟",
-  accessory: "🕶️", dress: "👗", other: "🛍️",
+  top: "i-shirt", bottom: "i-pants", outerwear: "i-coat", footwear: "i-shoe",
+  accessory: "i-glasses", dress: "i-dress", other: "i-bag",
 };
+const icon = (id, cls = "icon") => `<svg class="${cls}" aria-hidden="true"><use href="#${id}"/></svg>`;
+const heartIcon = filled => icon("i-heart", filled ? "icon fill" : "icon");
 
 // ---------- AI imagery (pollinations.ai — free, keyless) ----------
 const HERO_STYLE = ", premium fashion editorial photography, shot on medium format film, soft directional light, rich muted tones, shallow depth of field, no text, no watermark, no logo";
@@ -171,8 +173,15 @@ const todayKey = () => {
 const profileSig = () => JSON.stringify(profile || {});
 
 function feedSkeleton() {
-  feedGrid.innerHTML = Array.from({ length: 5 },
-    (_, i) => `<div class="skeleton" style="animation-delay:${i * .06}s"></div>`).join("");
+  // Skeletons mirror the final card layout (kicker, title, tagline).
+  feedGrid.innerHTML = Array.from({ length: 5 }, () =>
+    `<div class="skeleton">
+       <div class="sk-text">
+         <span class="sk-line w30"></span>
+         <span class="sk-line w70"></span>
+         <span class="sk-line w50"></span>
+       </div>
+     </div>`).join("");
 }
 
 function collectionToLook(c) {
@@ -195,7 +204,7 @@ function feedCardHTML(c) {
       <p class="card-kicker">${esc(c.occasion || "")}</p>
       <h3 class="card-title">${esc(c.title)}</h3>
       <p class="card-tagline">${esc(c.tagline || "")}</p>
-      <div class="card-foot">${dots}<span class="card-cta">Shop the look →</span></div>
+      <div class="card-foot">${dots}<span class="card-cta">Shop the look${icon("i-arrow-r", "icon sm")}</span></div>
     </div>
   </button>`;
 }
@@ -334,7 +343,7 @@ function openSheet(look) {
   const items = (look.items || []).map((item, i) => {
     const q = item.search || item.name || "";
     const links = retailersFor().map(([name, fn], j) =>
-      `<a class="shop-link${j === 0 ? " primary" : ""}" href="${esc(fn(q))}" target="_blank" rel="noopener">${name} ↗</a>`
+      `<a class="shop-link${j === 0 ? " primary" : ""}" href="${esc(fn(q))}" target="_blank" rel="noopener">${name}${icon("i-out", "icon sm")}</a>`
     ).join("");
     const thumb = item.image_prompt
       ? `<div class="thumb-wrap">
@@ -367,7 +376,7 @@ function openSheet(look) {
     </div>
     <div class="sheet-content">
       ${look.why ? `<p class="sheet-why">${esc(look.why)}</p>` : ""}
-      ${look.tip ? `<div class="tip-box"><span>✦</span><span><b>Stylist's tip</b> — ${esc(look.tip)}</span></div>` : ""}
+      ${look.tip ? `<div class="tip-box">${icon("i-spark")}<span><b>Stylist's tip</b> — ${esc(look.tip)}</span></div>` : ""}
       <p class="sheet-section">The pieces</p>
       ${items}
       <div class="taste-row">
@@ -375,8 +384,8 @@ function openSheet(look) {
         <button class="taste-btn" id="tasteLess">Less like this</button>
       </div>
       <div class="sheet-actions">
-        <button class="sheet-save${savedNow ? " saved" : ""}" id="sheetSave">${savedNow ? "♥ Saved" : "♡ Save"}</button>
-        <button class="sheet-save" id="sheetShare">↗ Share</button>
+        <button class="sheet-save${savedNow ? " saved" : ""}" id="sheetSave">${heartIcon(savedNow)}<span>${savedNow ? "Saved" : "Save"}</span></button>
+        <button class="sheet-save" id="sheetShare">${icon("i-share")}<span>Share</span></button>
         <button class="sheet-refine" id="sheetRefine">Refine in chat</button>
       </div>
     </div>`;
@@ -390,12 +399,14 @@ function openSheet(look) {
     const btn = e.currentTarget;
     if (isSaved(look)) {
       saved = saved.filter(s => lookKey(s) !== lookKey(look));
-      btn.classList.remove("saved"); btn.textContent = "♡ Save look";
+      btn.classList.remove("saved");
+      btn.innerHTML = `${heartIcon(false)}<span>Save</span>`;
       toast("Removed from saved");
     } else {
       saved.push(look);
-      btn.classList.add("saved"); btn.textContent = "♥ Saved";
-      toast("Saved ♥");
+      btn.classList.add("saved");
+      btn.innerHTML = `${heartIcon(true)}<span>Saved</span>`;
+      toast("Saved to your looks");
     }
     store.set("sty_saved", saved);
     refreshSavedBadge();
@@ -505,11 +516,11 @@ function lookCardHTML(look, opts = {}) {
   const items = (look.items || []).map(item => {
     const q = item.search || item.name || "";
     const links = retailersFor().map(([name, fn], i) =>
-      `<a class="shop-link${i === 0 ? " primary" : ""}" href="${esc(fn(q))}" target="_blank" rel="noopener">${name} ↗</a>`
+      `<a class="shop-link${i === 0 ? " primary" : ""}" href="${esc(fn(q))}" target="_blank" rel="noopener">${name}${icon("i-out", "icon sm")}</a>`
     ).join("");
     return `<div class="item">
       <div class="item-top">
-        <span class="item-cat">${CAT_ICON[item.category] || CAT_ICON.other}</span>
+        <span class="item-cat">${icon(CAT_ICON[item.category] || CAT_ICON.other, "icon sm")}</span>
         <span class="item-name">${esc(item.name || "")}</span>
         ${item.price ? `<span class="item-price">${esc(item.price)}</span>` : ""}
       </div>
@@ -519,8 +530,8 @@ function lookCardHTML(look, opts = {}) {
 
   const savedNow = isSaved(look);
   const saveBtn = opts.removable
-    ? `<button class="save-btn saved" data-remove title="Remove">✕</button>`
-    : `<button class="save-btn${savedNow ? " saved" : ""}" data-save title="Save look">${savedNow ? "♥" : "♡"}</button>`;
+    ? `<button class="save-btn saved" data-remove title="Remove" aria-label="Remove look">${icon("i-x")}</button>`
+    : `<button class="save-btn${savedNow ? " saved" : ""}" data-save title="Save look" aria-label="Save look">${heartIcon(savedNow)}</button>`;
 
   return `<article class="look-card" data-look="${esc(JSON.stringify(look))}">
     ${hero}
@@ -731,13 +742,13 @@ document.addEventListener("click", e => {
     if (isSaved(look)) {
       saved = saved.filter(s => lookKey(s) !== lookKey(look));
       saveBtn.classList.remove("saved");
-      saveBtn.textContent = "♡";
+      saveBtn.innerHTML = heartIcon(false);
       toast("Removed from saved");
     } else {
       saved.push(look);
       saveBtn.classList.add("saved");
-      saveBtn.textContent = "♥";
-      toast("Saved ♥");
+      saveBtn.innerHTML = heartIcon(true);
+      toast("Saved to your looks");
     }
     store.set("sty_saved", saved);
     refreshSavedBadge();
