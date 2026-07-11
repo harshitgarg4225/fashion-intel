@@ -8,6 +8,8 @@ A visual-first personal styling product (think Glance AI's loop — personalized
 
 **For You — a daily visual feed (the flagship surface)**
 - Every day, one Claude call curates **5 personal collections**: weather-driven, work, evening, weekend, and one trend-forward wildcard — tailored to your gender presentation, region, budget, vibes, and fit notes.
+- **The feed streams**: the greeting and each collection render the moment the model finishes composing them (server-side incremental JSON extraction over SSE) — first card in seconds, not after full generation.
+- **Novelty memory**: recently shown collection titles (across days) are excluded from every generation, so the feed never repeats itself.
 - Each collection renders as a **full-bleed editorial card with an AI-generated fashion photo** (Flux via pollinations.ai — free, keyless), a palette story, and a tagline.
 - **Weather-aware**: the feed reads your local conditions via Open-Meteo (free, keyless, optional geolocation).
 - Tap a card → **look sheet**: hero image, stylist's reasoning, insider tip, and every piece with an AI product thumbnail, local price range, and one-tap **shop buttons** deep-linking to retailer searches (Myntra / Amazon / Ajio / Flipkart in India; ASOS / Nordstrom / Zara / Amazon in the US & UK).
@@ -17,10 +19,17 @@ A visual-first personal styling product (think Glance AI's loop — personalized
 **Stylist — streaming chat**
 - Ask for anything; replies stream in with **look cards** (now with hero imagery + palettes) and **quick-reply chips**.
 
-**Saved**
-- ♡ any look — from the feed sheet or chat — into a persistent wardrobe of ideas.
+**Stylist chat extras**
+- **Voice input** (Web Speech API — free, on-device trigger; auto-hidden on unsupported browsers).
 
-Mobile-first editorial design, automatic dark mode, works as a full-screen web app.
+**Saved & Share**
+- ♡ any look — from the feed sheet or chat — into a persistent wardrobe of ideas.
+- **Share** any look via the native share sheet (WhatsApp-ready text with shop links), clipboard fallback on desktop.
+
+**Installable PWA**
+- Manifest + service worker: add to home screen, instant app-shell loads, standalone display. API calls are never cached.
+
+Mobile-first editorial design, automatic dark mode. The backend uses the **async** Anthropic client end-to-end, so concurrent streams don't pin threads — one small instance holds many simultaneous users.
 
 ## Why it's cheap
 

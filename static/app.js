@@ -182,31 +182,52 @@ function collectionToLook(c) {
   };
 }
 
-function renderFeed(data) {
-  const greetEl = $("feedGreeting");
-  if (data.greeting) greetEl.innerHTML = `<em>${esc(data.greeting)}</em>`;
-  feedGrid.innerHTML = data.collections.map((c, i) => {
-    const seed = hashSeed(c.title + todayKey());
-    const dots = (c.palette || []).slice(0, 4)
-      .filter(p => /^#[0-9a-fA-F]{3,8}$/.test(String(p)))
-      .map(p => `<span class="dot" style="background:${esc(p)}"></span>`).join("");
-    return `<button class="feed-card" data-idx="${i}" style="animation-delay:${i * .07}s">
-      <div class="card-bg" style="background:${paletteGradient(c.palette)}"></div>
-      <img class="card-img" data-hydrate loading="lazy" alt="" src="${esc(heroURL(c.image_prompt || c.title, seed))}">
-      <div class="card-scrim"></div>
-      <div class="card-text">
-        <p class="card-kicker">${esc(c.occasion || "")}</p>
-        <h3 class="card-title">${esc(c.title)}</h3>
-        <p class="card-tagline">${esc(c.tagline || "")}</p>
-        <div class="card-foot">${dots}<span class="card-cta">Shop the look →</span></div>
-      </div>
-    </button>`;
-  }).join("");
-  hydrateImages(feedGrid);
-  feedGrid.querySelectorAll(".feed-card").forEach(card => {
-    card.onclick = () => openSheet(collectionToLook(data.collections[+card.dataset.idx]));
-  });
+function feedCardHTML(c) {
+  const seed = hashSeed(c.title + todayKey());
+  const dots = (c.palette || []).slice(0, 4)
+    .filter(p => /^#[0-9a-fA-F]{3,8}$/.test(String(p)))
+    .map(p => `<span class="dot" style="background:${esc(p)}"></span>`).join("");
+  return `<button class="feed-card" aria-label="Open look: ${esc(c.title)}">
+    <div class="card-bg" style="background:${paletteGradient(c.palette)}"></div>
+    <img class="card-img" data-hydrate loading="lazy" alt="" src="${esc(heroURL(c.image_prompt || c.title, seed))}">
+    <div class="card-scrim"></div>
+    <div class="card-text">
+      <p class="card-kicker">${esc(c.occasion || "")}</p>
+      <h3 class="card-title">${esc(c.title)}</h3>
+      <p class="card-tagline">${esc(c.tagline || "")}</p>
+      <div class="card-foot">${dots}<span class="card-cta">Shop the look →</span></div>
+    </div>
+  </button>`;
 }
+
+// Append one card, consuming a skeleton slot if one is waiting.
+function placeFeedCard(c) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = feedCardHTML(c);
+  const card = wrap.firstElementChild;
+  card.onclick = () => openSheet(collectionToLook(c));
+  const sk = feedGrid.querySelector(".skeleton");
+  if (sk) feedGrid.replaceChild(card, sk);
+  else feedGrid.appendChild(card);
+  hydrateImages(card);
+}
+
+function setGreeting(text) {
+  if (text) $("feedGreeting").innerHTML = `<em>${esc(text)}</em>`;
+}
+
+function renderFeed(data) {
+  setGreeting(data.greeting);
+  feedGrid.innerHTML = "";
+  (data.collections || []).forEach(placeFeedCard);
+}
+
+function rememberShown(collections) {
+  const seen = store.get("sty_seen", []);
+  const merged = [...seen, ...collections.map(c => ({ t: String(c.title).slice(0, 60), d: todayKey() }))];
+  store.set("sty_seen", merged.slice(-24));
+}
+const recentTitles = () => store.get("sty_seen", []).map(s => s.t).slice(-15);
 
 async function loadFeed(force) {
   if (feedLoading || !profile) return;
@@ -227,8 +248,10 @@ async function loadFeed(force) {
 
   const weather = await getWeather();
   if (weather) showWeather(weather);
-  const avoid = force && cached ? (cached.data.collections || []).map(c => c.title) : [];
+  // Novelty memory: everything shown recently (across days) is excluded.
+  const avoid = recentTitles();
 
+  const data = { greeting: "", collections: [] };
   try {
     const res = await fetch("/api/feed", {
       method: "POST",
@@ -238,16 +261,58 @@ async function loadFeed(force) {
         context: { weather: weather || "unknown", loved: taste.loved, less: taste.less, avoid },
       }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `Feed failed (${res.status})`);
-    if (!Array.isArray(data.collections) || !data.collections.length) throw new Error("Empty feed.");
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error || `Feed failed (${res.status})`);
+    }
+
+    // The feed streams: greeting first, then one collection at a time —
+    // each card renders the moment the model finishes composing it.
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    outer: while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const events = buf.split("\n\n");
+      buf = events.pop();
+      for (const ev of events) {
+        const line = ev.split("\n").find(l => l.startsWith("data: "));
+        if (!line) continue;
+        let payload;
+        try { payload = JSON.parse(line.slice(6)); } catch { continue; }
+        if (payload.type === "greeting") {
+          data.greeting = payload.text;
+          setGreeting(payload.text);
+        } else if (payload.type === "collection") {
+          data.collections.push(payload.data);
+          placeFeedCard(payload.data);
+        } else if (payload.type === "error") {
+          throw new Error(payload.error);
+        } else if (payload.type === "done") {
+          break outer;
+        }
+      }
+    }
+
+    if (!data.collections.length) throw new Error("Empty feed — try again.");
+    feedGrid.querySelectorAll(".skeleton").forEach(s => s.remove());
     store.set("sty_feed", { date: todayKey(), sig, data, weather });
-    renderFeed(data);
+    rememberShown(data.collections);
   } catch (err) {
-    feedGrid.innerHTML = `<div class="feed-error">
-      <p>${esc(err.message || "Couldn't load your feed.")}</p>
-      <button class="refresh-btn" onclick="document.getElementById('refreshFeed').click()">Try again</button>
-    </div>`;
+    if (data.collections.length) {
+      // Partial feed arrived before the failure — keep it, don't wipe it.
+      feedGrid.querySelectorAll(".skeleton").forEach(s => s.remove());
+      store.set("sty_feed", { date: todayKey(), sig, data, weather });
+      rememberShown(data.collections);
+      toast("Some looks didn't make it — refresh for more");
+    } else {
+      feedGrid.innerHTML = `<div class="feed-error">
+        <p>${esc(err.message || "Couldn't load your feed.")}</p>
+        <button class="refresh-btn" onclick="document.getElementById('refreshFeed').click()">Try again</button>
+      </div>`;
+    }
   }
   feedLoading = false;
   $("refreshFeed").classList.remove("spinning");
@@ -310,13 +375,16 @@ function openSheet(look) {
         <button class="taste-btn" id="tasteLess">Less like this</button>
       </div>
       <div class="sheet-actions">
-        <button class="sheet-save${savedNow ? " saved" : ""}" id="sheetSave">${savedNow ? "♥ Saved" : "♡ Save look"}</button>
+        <button class="sheet-save${savedNow ? " saved" : ""}" id="sheetSave">${savedNow ? "♥ Saved" : "♡ Save"}</button>
+        <button class="sheet-save" id="sheetShare">↗ Share</button>
         <button class="sheet-refine" id="sheetRefine">Refine in chat</button>
       </div>
     </div>`;
   sheetEl.hidden = false;
   document.body.style.overflow = "hidden";
   hydrateImages($("sheetBody"));
+  const closeBtn = sheetEl.querySelector(".sheet-close");
+  if (closeBtn) closeBtn.focus({ preventScroll: true });
 
   $("sheetSave").onclick = e => {
     const btn = e.currentTarget;
@@ -347,6 +415,18 @@ function openSheet(look) {
   };
   $("tasteMore").onclick = () => { pushTaste("loved", look); toast("Noted — more of this vibe"); };
   $("tasteLess").onclick = () => { pushTaste("less", look); toast("Got it — dialing this down"); };
+  $("sheetShare").onclick = async () => {
+    const shop = retailersFor()[0];
+    const lines = (look.items || []).map(i =>
+      `• ${i.name}${i.price ? ` (${i.price})` : ""} → ${shop[1](i.search || i.name)}`);
+    const text = `${look.title} — ${look.occasion || ""}\n${look.why || ""}\n\n${lines.join("\n")}\n\nStyled by Stylist ✦`;
+    if (navigator.share) {
+      try { await navigator.share({ title: look.title, text }); } catch { /* user dismissed */ }
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text).catch(() => {});
+      toast("Look copied — paste it anywhere");
+    }
+  };
 }
 
 function pushTaste(kind, look) {
@@ -701,9 +781,11 @@ function openModal() {
   modal.hidden = false;
   // First run must complete the quiz; returning users can dismiss.
   $("modalClose").hidden = !profile;
+  // Smart defaults on first run — one tap to a working feed.
+  const defaults = profile ? null : { region: "India", budget: "mid-range, quality basics" };
   document.querySelectorAll(".pill-row").forEach(row => {
     const name = row.dataset.name;
-    const current = profile ? profile[name] : null;
+    const current = profile ? profile[name] : (defaults && defaults[name]) || null;
     row.querySelectorAll(".pill").forEach(p => {
       const on = current
         ? (row.classList.contains("multi") ? current.includes(p.dataset.v) : current === p.dataset.v)
@@ -758,9 +840,40 @@ $("newChatBtn").onclick = () => {
   switchTab("chat");
 };
 
+// ---------- voice input (Web Speech API — Chrome/Android; hidden elsewhere) ----------
+(() => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const micBtn = $("micBtn");
+  if (!SR || !micBtn) return;
+  micBtn.hidden = false;
+  let rec = null;
+  micBtn.onclick = () => {
+    if (rec) { rec.stop(); return; }
+    rec = new SR();
+    rec.lang = ({ "India": "en-IN", "United States": "en-US", "United Kingdom": "en-GB" })[(profile || {}).region] || "en-IN";
+    rec.interimResults = true;
+    const base = inputEl.value.trim();
+    rec.onresult = e => {
+      let t = "";
+      for (const r of e.results) t += r[0].transcript;
+      inputEl.value = base ? `${base} ${t}` : t;
+      autosize();
+    };
+    const stop = () => { micBtn.classList.remove("rec"); rec = null; };
+    rec.onend = stop;
+    rec.onerror = stop;
+    micBtn.classList.add("rec");
+    try { rec.start(); } catch { stop(); }
+  };
+})();
+
 // ---------- boot ----------
 renderHistory();
 refreshSavedBadge();
 if (!profile) openModal();
 else loadFeed(false);
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
 })();

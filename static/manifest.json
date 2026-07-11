@@ -1,0 +1,13 @@
+{
+  "name": "Stylist — your AI fashion feed",
+  "short_name": "Stylist",
+  "description": "A daily personal fashion feed and AI stylist. Looks styled to you, shoppable in one tap.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f2ea",
+  "theme_color": "#f6f2ea",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

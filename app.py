@@ -23,9 +23,10 @@ import time
 from collections import defaultdict, deque
 from pathlib import Path
 
+import re
+
 import anthropic
 from fastapi import FastAPI, Request
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -37,7 +38,9 @@ MAX_MESSAGE_CHARS = 4000    # per-message input cap
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-client = anthropic.Anthropic()
+# Async client: streaming replies don't pin a threadpool thread each,
+# so one small instance can hold many concurrent streams.
+client = anthropic.AsyncAnthropic()
 app = FastAPI(title="Stylist")
 
 SYSTEM_TEMPLATE = """\
@@ -186,17 +189,17 @@ async def chat(request: Request):
     profile = {str(k)[:40]: str(v)[:200] for k, v in list(profile.items())[:12]}
     system = build_system(profile)
 
-    def generate():
+    async def generate():
         try:
-            with client.messages.stream(
+            async with client.messages.stream(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 system=system,
                 messages=messages,
             ) as stream:
-                for text in stream.text_stream:
+                async for text in stream.text_stream:
                     yield sse({"type": "text", "text": text})
-                final = stream.get_final_message()
+                final = await stream.get_final_message()
             yield sse({"type": "done", "stop_reason": final.stop_reason})
         except anthropic.AuthenticationError:
             yield sse({"type": "error",
@@ -302,6 +305,82 @@ background, soft shadow" adapted to the piece.
 """
 
 
+class FeedStreamParser:
+    """Incrementally extracts feed events from a streaming JSON response.
+
+    The model streams one big JSON object; users shouldn't wait for all of
+    it. This scanner emits the greeting the moment its string closes and
+    each collection the moment its object's braces balance — so the first
+    card can render seconds before generation finishes.
+    """
+
+    _GREETING = re.compile(r'"greeting"\s*:\s*"((?:[^"\\]|\\.)*)"')
+    _ARRAY = re.compile(r'"collections"\s*:\s*\[')
+
+    def __init__(self):
+        self.buf = ""
+        self.greeting_sent = False
+        self.cursor = None  # scan position inside the collections array
+
+    def feed(self, delta: str) -> list[dict]:
+        self.buf += delta
+        events = []
+        if not self.greeting_sent:
+            m = self._GREETING.search(self.buf)
+            if m:
+                try:
+                    text = json.loads('"' + m.group(1) + '"')
+                except json.JSONDecodeError:
+                    text = m.group(1)
+                events.append({"type": "greeting", "text": text})
+                self.greeting_sent = True
+        if self.cursor is None:
+            m = self._ARRAY.search(self.buf)
+            if m:
+                self.cursor = m.end()
+        if self.cursor is not None:
+            while True:
+                found = self._next_object(self.cursor)
+                if found is None:
+                    break
+                obj, self.cursor = found
+                if obj is not None:
+                    events.append({"type": "collection", "data": obj})
+        return events
+
+    def _next_object(self, start: int):
+        """Return (parsed_or_None, new_cursor) for the next brace-balanced
+        object at/after `start`, or None if it isn't complete yet."""
+        s, n = self.buf, len(self.buf)
+        i = start
+        while i < n and s[i] in " \t\r\n,":
+            i += 1
+        if i >= n or s[i] != "{":
+            return None
+        depth, in_str, esc = 0, False, False
+        for j in range(i, n):
+            ch = s[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            elif ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(s[i:j + 1]), j + 1
+                    except json.JSONDecodeError:
+                        return None, j + 1  # skip a malformed element
+        return None
+
+
 @app.post("/api/feed")
 async def feed(request: Request):
     if not allow(client_ip(request)):
@@ -313,57 +392,80 @@ async def feed(request: Request):
     profile = body.get("profile") if isinstance(body.get("profile"), dict) else {}
     profile = {str(k)[:40]: str(v)[:200] for k, v in list(profile.items())[:12]}
     ctx = body.get("context") if isinstance(body.get("context"), dict) else {}
+    if not isinstance(ctx.get("loved"), list):
+        ctx["loved"] = []
+    if not isinstance(ctx.get("less"), list):
+        ctx["less"] = []
+    if not isinstance(ctx.get("avoid"), list):
+        ctx["avoid"] = []
 
     brief = {
         "date": time.strftime("%A, %d %B %Y"),
         "profile": profile or "not provided — assume versatile, mid-budget",
         "weather": str(ctx.get("weather", "unknown"))[:120],
-        "loved": [str(x)[:60] for x in ctx.get("loved", [])[:8]],
-        "less_of_this": [str(x)[:60] for x in ctx.get("less", [])[:8]],
-        "avoid_titles": [str(x)[:60] for x in ctx.get("avoid", [])[:15]],
+        "loved": [str(x)[:60] for x in ctx["loved"][:8]],
+        "less_of_this": [str(x)[:60] for x in ctx["less"][:8]],
+        "avoid_titles": [str(x)[:60] for x in ctx["avoid"][:20]],
     }
 
-    def call():
-        return client.messages.create(
-            model=MODEL,
-            max_tokens=4096,
-            system=FEED_SYSTEM,
-            messages=[{
-                "role": "user",
-                "content": "Generate today's feed for this brief:\n"
-                           + json.dumps(brief, ensure_ascii=False),
-            }],
-            output_config={"format": {"type": "json_schema", "schema": FEED_SCHEMA}},
-        )
+    async def generate():
+        parser = FeedStreamParser()
+        count = 0
+        try:
+            async with client.messages.stream(
+                model=MODEL,
+                max_tokens=4096,
+                system=FEED_SYSTEM,
+                messages=[{
+                    "role": "user",
+                    "content": "Generate today's feed for this brief:\n"
+                               + json.dumps(brief, ensure_ascii=False),
+                }],
+                output_config={"format": {"type": "json_schema", "schema": FEED_SCHEMA}},
+            ) as stream:
+                async for delta in stream.text_stream:
+                    for ev in parser.feed(delta):
+                        if ev["type"] == "collection":
+                            if count >= 6:
+                                continue
+                            count += 1
+                        yield sse(ev)
+                await stream.get_final_message()
+            if count == 0:
+                yield sse({"type": "error",
+                           "error": "The stylist came back empty — try again."})
+            else:
+                yield sse({"type": "done"})
+        except anthropic.AuthenticationError:
+            yield sse({"type": "error",
+                       "error": "Server is missing a valid ANTHROPIC_API_KEY."})
+        except anthropic.RateLimitError:
+            yield sse({"type": "error",
+                       "error": "The stylist is overloaded — try again in a minute."})
+        except anthropic.APIStatusError as e:
+            yield sse({"type": "error", "error": f"Upstream error ({e.status_code})."})
+        except anthropic.APIConnectionError:
+            yield sse({"type": "error", "error": "Couldn't reach the stylist — try again."})
+        except Exception:
+            yield sse({"type": "error",
+                       "error": "The stylist isn't configured yet (check ANTHROPIC_API_KEY)."})
 
-    try:
-        resp = await run_in_threadpool(call)
-        if resp.stop_reason == "refusal":
-            return JSONResponse({"error": "Couldn't style that request."}, status_code=502)
-        text = next((b.text for b in resp.content if b.type == "text"), "")
-        data = json.loads(text)
-        data["collections"] = data.get("collections", [])[:6]
-        return JSONResponse(data)
-    except anthropic.AuthenticationError:
-        return JSONResponse({"error": "Server is missing a valid ANTHROPIC_API_KEY."},
-                            status_code=500)
-    except anthropic.RateLimitError:
-        return JSONResponse({"error": "The stylist is overloaded — try again in a minute."},
-                            status_code=503)
-    except anthropic.APIStatusError as e:
-        return JSONResponse({"error": f"Upstream error ({e.status_code})."}, status_code=502)
-    except (anthropic.APIConnectionError, json.JSONDecodeError):
-        return JSONResponse({"error": "Couldn't reach the stylist — try again."},
-                            status_code=502)
-    except Exception:
-        return JSONResponse(
-            {"error": "The stylist isn't configured yet (check ANTHROPIC_API_KEY)."},
-            status_code=500)
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from the root so the service worker can control the whole app.
+    return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
