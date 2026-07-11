@@ -998,7 +998,30 @@ $("attachRemove").onclick = () => {
   inputEl.placeholder = "Ask your stylist anything…";
 };
 
-document.querySelectorAll(".starter").forEach(b => (b.onclick = () => send(b.dataset.q)));
+document.querySelectorAll(".starter").forEach(b => (b.onclick = () => {
+  if (b.dataset.action === "attach") fileInput.click();   // "find something similar" → photo styling
+  else send(b.dataset.q);
+}));
+
+// ---------- fresh drops from favourite brands (always-live retailer links) ----------
+const NEW_IN = {
+  "India": b => `https://www.myntra.com/${encodeURIComponent(b.toLowerCase().replace(/\s+/g, "-"))}?sort=new`,
+  "United States": b => `https://www.nordstrom.com/sr?keyword=${encodeURIComponent(b + " new arrivals")}`,
+  "United Kingdom": b => `https://www.asos.com/search/?q=${encodeURIComponent(b + " new in")}`,
+  "Other / Global": b => `https://www.asos.com/search/?q=${encodeURIComponent(b + " new in")}`,
+};
+
+function renderDrops() {
+  const rail = $("dropsRail");
+  const brands = (profile && profile.brands ? profile.brands : "")
+    .split(",").map(s => s.trim()).filter(s => s.length > 1).slice(0, 6);
+  if (!brands.length) { rail.hidden = true; return; }
+  const linker = NEW_IN[(profile && profile.region) || "India"] || NEW_IN["Other / Global"];
+  $("dropsChips").innerHTML = brands.map(b =>
+    `<a class="chip" href="${esc(linker(b))}" target="_blank" rel="noopener">${esc(b)}${icon("i-out", "icon sm")}</a>`
+  ).join("");
+  rail.hidden = false;
+}
 
 // ---------- profile modal ----------
 function openModal() {
@@ -1020,6 +1043,7 @@ function openModal() {
     });
   });
   $("nameInput").value = (profile && profile.name) || "";
+  $("brandsInput").value = (profile && profile.brands) || "";
   $("notesInput").value = (profile && profile.notes) || "";
 }
 
@@ -1047,6 +1071,7 @@ $("profileForm").addEventListener("submit", e => {
     dresscode: read("dresscode") || "business casual",
     budget: read("budget") || "mid-range, quality basics",
     style: read("style") || "open to suggestions",
+    brands: $("brandsInput").value.trim(),
     notes: $("notesInput").value.trim(),
   };
   store.set("sty_profile", profile);
@@ -1055,6 +1080,7 @@ $("profileForm").addEventListener("submit", e => {
   // Re-rendering mid-stream would detach the live reply's DOM node —
   // skip it; region-link refresh happens on the next natural render.
   if (!streaming) renderHistory();
+  renderDrops();
   loadFeed(true);           // profile changed → fresh feed
 });
 
@@ -1104,6 +1130,7 @@ $("newChatBtn").onclick = () => {
 renderHistory();
 refreshSavedBadge();
 refreshTasteChip();
+renderDrops();
 if (!profile) openModal();
 else loadFeed(false);
 

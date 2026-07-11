@@ -79,6 +79,10 @@
     </div>
   </div>
   <div id="feedGrid" class="feed-grid"></div>
+  <div id="dropsRail" class="drops-rail" hidden>
+    <p class="sheet-section">Fresh drops from your brands</p>
+    <div id="dropsChips" class="chips"></div>
+  </div>
   <p class="fineprint pad">Imagery is AI-generated inspiration · shop links open live retailer searches.</p>
 </main>
 
@@ -96,6 +100,7 @@
       <button class="starter" data-q="Brunch with friends this weekend — effortless but put together">Weekend brunch ☕</button>
       <button class="starter" data-q="Build me a 5-day work capsule from ~8 pieces, zero repeats, minimal ironing">5-day work capsule 🗓️</button>
       <button class="starter" data-q="Straight from work to a dinner — upgrade my outfit with one swap">Desk to dinner ✨</button>
+      <button class="starter" data-action="attach">Find something similar to a photo 📷</button>
     </div>
   </div>
 
@@ -204,6 +209,10 @@
           <button type="button" class="pill" data-v="ethnic / fusion">Ethnic&nbsp;&amp;&nbsp;fusion</button>
         </div>
       </div>
+      <label class="field">
+        <span>Favourite brands <small>(optional — powers your "fresh drops" shortcuts)</small></span>
+        <input type="text" id="brandsInput" class="text-input" placeholder="e.g. Zara, H&M, Fabindia, Global Desi" maxlength="120">
+      </label>
       <label class="field">
         <span>Anything else? <small>(fit, sizes, colors you avoid…)</small></span>
         <input type="text" id="notesInput" class="text-input" placeholder="e.g. petite, size M, prefer sleeves, no bodycon" maxlength="180">

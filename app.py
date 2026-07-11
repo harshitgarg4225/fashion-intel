@@ -19,13 +19,13 @@ Environment variables:
 
 import json
 import os
+import re
 import time
 from collections import defaultdict, deque
 from pathlib import Path
 
-import re
-
 import anthropic
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
                                StreamingResponse)
@@ -380,7 +380,13 @@ colour leanings, dresses vs separates, footwear, jewellery, ethnic-wear \
 frequency, fit, and prints. If they point to a flattering colour family, make \
 ONE of the five collections a colour story around it — title it like a shade \
 editorial (e.g. "The Sapphire Hour"), say in the tagline why that shade works \
-for them, and build every piece inside that colour family.
+for them, and build every piece inside that colour family. live_signals are \
+REAL trending searches and fashion-community discussions from her region this \
+week — when one is genuinely fashion-relevant, ground the WILDCARD (or one \
+collection) in it and nod to it in the tagline ("everyone's asking about…"); \
+ignore signals that aren't about style. If favourite brands are in the \
+profile, let their aesthetic inform silhouettes — never invent specific new \
+product launches.
 
 Field rules:
 - greeting: one decisive, time-aware line; use the person's name if given; nod \
@@ -401,6 +407,62 @@ garment, never brands). price = realistic local range. item image_prompt = \
 "studio product photograph of <item>, floating on a warm neutral seamless \
 background, soft shadow" adapted to the piece.
 """
+
+
+# ---------------------------------------------------------------------------
+# Live trend signal (zero-key, zero-cost).
+# Pattern borrowed from the Google-Trends-based trend-forecasting repos
+# (pytrends is archived, so we read the supported Trends RSS directly) plus
+# fashion-community discussion as the style-specific signal.
+# ---------------------------------------------------------------------------
+
+TREND_SOURCES = {
+    "India": {"geo": "IN", "subs": ["IndianFashionAddicts", "femalefashionadvice"]},
+    "United States": {"geo": "US", "subs": ["femalefashionadvice", "fashionadvice"]},
+    "United Kingdom": {"geo": "GB", "subs": ["femalefashionadvice", "UKfashion"]},
+    "Other / Global": {"geo": "US", "subs": ["femalefashionadvice", "fashion"]},
+}
+TREND_TTL_SECONDS = 12 * 3600
+_trend_cache: dict = {"at": 0.0, "region": None, "terms": []}
+
+
+async def get_live_trends(region: str) -> list[str]:
+    """Best-effort, cached. Any failure returns [] and the model falls back
+    to its own trend knowledge — the feed never blocks on this."""
+    now = time.time()
+    if _trend_cache["region"] == region and now - _trend_cache["at"] < TREND_TTL_SECONDS:
+        return _trend_cache["terms"]
+
+    cfg = TREND_SOURCES.get(region) or TREND_SOURCES["Other / Global"]
+    terms: list[str] = []
+    try:
+        async with httpx.AsyncClient(
+            timeout=6, headers={"User-Agent": "stylist-feed/1.0"}
+        ) as hc:
+            for sub in cfg["subs"][:2]:
+                try:
+                    r = await hc.get(
+                        f"https://www.reddit.com/r/{sub}/top.json",
+                        params={"t": "week", "limit": 8},
+                    )
+                    for child in r.json().get("data", {}).get("children", []):
+                        title = str(child.get("data", {}).get("title", "")).strip()
+                        if 15 <= len(title) <= 120:
+                            terms.append(title)
+                except Exception:
+                    pass
+            try:
+                r = await hc.get(f"https://trends.google.com/trending/rss?geo={cfg['geo']}")
+                titles = re.findall(r"<title>(.*?)</title>", r.text)[1:9]
+                terms.extend(t for t in titles if t)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    terms = terms[:14]
+    _trend_cache.update(at=now, region=region, terms=terms)
+    return terms
 
 
 class FeedStreamParser:
@@ -499,6 +561,8 @@ async def feed(request: Request):
     quiz = ctx.get("quiz") if isinstance(ctx.get("quiz"), dict) else {}
     quiz = {str(k)[:30]: str(v)[:60] for k, v in list(quiz.items())[:10]}
 
+    live_signals = await get_live_trends(str(profile.get("region", "India")))
+
     brief = {
         "date": time.strftime("%A, %d %B %Y"),
         "profile": profile or "not provided — assume versatile, mid-budget",
@@ -506,6 +570,7 @@ async def feed(request: Request):
         "loved": [str(x)[:60] for x in ctx["loved"][:8]],
         "less_of_this": [str(x)[:60] for x in ctx["less"][:8]],
         "style_answers": quiz,
+        "live_signals": live_signals,
         "avoid_titles": [str(x)[:60] for x in ctx["avoid"][:20]],
     }
 
