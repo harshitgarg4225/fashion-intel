@@ -19,6 +19,7 @@ let streaming = false;
 let abortCtrl = null;
 let feedLoading = false;
 let currentLook = null; // look shown in the sheet
+let chatGen = 0;        // bumped on "New chat" so an in-flight reply can't leak in
 
 // ---------- retailer deep links ----------
 const RETAILERS = {
@@ -162,7 +163,11 @@ async function getWeather() {
 }
 
 // ---------- FEED ----------
-const todayKey = () => new Date().toISOString().slice(0, 10);
+// Local date, not UTC — the daily feed should roll over at the user's midnight.
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const profileSig = () => JSON.stringify(profile || {});
 
 function feedSkeleton() {
@@ -205,8 +210,12 @@ function renderFeed(data) {
 
 async function loadFeed(force) {
   if (feedLoading || !profile) return;
+  // Snapshot the profile at REQUEST time: if it changes mid-flight, the
+  // response is stored under the old signature and we regenerate after.
+  const sig = profileSig();
+  const prof = profile;
   const cached = store.get("sty_feed", null);
-  if (!force && cached && cached.date === todayKey() && cached.sig === profileSig()) {
+  if (!force && cached && cached.date === todayKey() && cached.sig === sig) {
     renderFeed(cached.data);
     if (cached.weather) showWeather(cached.weather);
     return;
@@ -225,14 +234,14 @@ async function loadFeed(force) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        profile,
+        profile: prof,
         context: { weather: weather || "unknown", loved: taste.loved, less: taste.less, avoid },
       }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Feed failed (${res.status})`);
     if (!Array.isArray(data.collections) || !data.collections.length) throw new Error("Empty feed.");
-    store.set("sty_feed", { date: todayKey(), sig: profileSig(), data, weather });
+    store.set("sty_feed", { date: todayKey(), sig, data, weather });
     renderFeed(data);
   } catch (err) {
     feedGrid.innerHTML = `<div class="feed-error">
@@ -242,6 +251,7 @@ async function loadFeed(force) {
   }
   feedLoading = false;
   $("refreshFeed").classList.remove("spinning");
+  if (profileSig() !== sig) loadFeed(true);  // profile changed mid-flight
 }
 
 function showWeather(text) {
@@ -323,9 +333,17 @@ function openSheet(look) {
     refreshSavedBadge();
   };
   $("sheetRefine").onclick = () => {
+    const msg = `Refine the "${look.title}" look (${look.occasion || "no occasion"}) — suggest swaps or variations that fit my profile.`;
     closeSheet();
     switchTab("chat");
-    send(`Refine the "${look.title}" look (${look.occasion || "no occasion"}) — suggest swaps or variations that fit my profile.`);
+    if (streaming) {
+      // send() would silently no-op mid-stream — park the text instead.
+      inputEl.value = msg;
+      autosize();
+      toast("Finishing the current reply — tap send when ready");
+    } else {
+      send(msg);
+    }
   };
   $("tasteMore").onclick = () => { pushTaste("loved", look); toast("Noted — more of this vibe"); };
   $("tasteLess").onclick = () => { pushTaste("less", look); toast("Got it — dialing this down"); };
@@ -343,7 +361,15 @@ function closeSheet() {
   currentLook = null;
 }
 sheetEl.addEventListener("click", e => { if (e.target.closest("[data-close]")) closeSheet(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !sheetEl.hidden) closeSheet(); });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!sheetEl.hidden) closeSheet();
+  else if (!modal.hidden && profile) modal.hidden = true;
+});
+$("modalClose").onclick = () => { modal.hidden = true; };
+modal.addEventListener("click", e => {
+  if (e.target === modal && profile) modal.hidden = true;   // backdrop dismiss
+});
 
 // ---------- assistant message parsing ----------
 function parseAssistant(raw) {
@@ -351,7 +377,8 @@ function parseAssistant(raw) {
   const fence = /```(look|chips)\s*\n([\s\S]*?)```/g;
   let last = 0, m;
   while ((m = fence.exec(raw))) {
-    if (m.index > last) segments.push({ type: "text", text: raw.slice(last, m.index) });
+    const between = raw.slice(last, m.index);
+    if (between.trim()) segments.push({ type: "text", text: between });
     try {
       const data = JSON.parse(m[2]);
       segments.push({ type: m[1], data });
@@ -359,14 +386,28 @@ function parseAssistant(raw) {
     last = m.index + m[0].length;
   }
   const tail = raw.slice(last);
-  const open = tail.match(/```(look|chips)?[^`]*$/);
-  if (open) {
-    const before = tail.slice(0, open.index);
+
+  // An unclosed TAGGED fence — a look/chips block is still streaming in.
+  const tagOpen = /```(look|chips)\b[\s\S]*$/.exec(tail);
+  if (tagOpen && !tail.slice(tagOpen.index + 3).includes("```")) {
+    const before = tail.slice(0, tagOpen.index);
     if (before.trim()) segments.push({ type: "text", text: before });
-    segments.push({ type: "pending", kind: open[1] || "look" });
-  } else if (tail.trim()) {
-    segments.push({ type: "text", text: tail });
+    segments.push({ type: "pending", kind: tagOpen[1], text: tail.slice(tagOpen.index) });
+    return segments;
   }
+
+  // A fence opener whose tag hasn't fully streamed yet ("`", "``", "```chi").
+  // Hold the fragment back; if the message ends here it renders as text.
+  const partial = /`{1,3}[a-z]{0,5}$/.exec(tail);
+  if (partial) {
+    const before = tail.slice(0, partial.index);
+    if (before.trim()) segments.push({ type: "text", text: before });
+    segments.push({ type: "pending", kind: null, text: tail.slice(partial.index) });
+    return segments;
+  }
+
+  // Anything else — including complete generic ``` fences — is plain text.
+  if (tail.trim()) segments.push({ type: "text", text: tail });
   return segments;
 }
 
@@ -425,8 +466,15 @@ function renderAssistantInto(el, raw, done) {
     if (seg.type === "text") html += `<div class="prose">${md(seg.text)}</div>`;
     else if (seg.type === "look") html += lookCardHTML(seg.data);
     else if (seg.type === "chips") chips = seg.data;
-    else if (seg.type === "pending" && !done)
-      html += seg.kind === "chips" ? "" : `<div class="look-pending">Putting a look together…</div>`;
+    else if (seg.type === "pending") {
+      if (done) {
+        // Never silently drop content: an unresolved fence renders as text.
+        if (seg.text && seg.text.trim()) html += `<div class="prose">${md(seg.text)}</div>`;
+      } else if (seg.kind === "look") {
+        html += `<div class="look-pending">Putting a look together…</div>`;
+      }
+      // chips / unknown fragments render nothing while streaming
+    }
   }
   if (!done && !html) html = `<div class="typing"><i></i><i></i><i></i></div>`;
   el.innerHTML = html;
@@ -440,6 +488,7 @@ function addUserMsg(text) {
   div.className = "msg user";
   div.innerHTML = `<div class="bubble">${esc(text)}</div>`;
   messagesEl.appendChild(div);
+  return div;
 }
 
 function addSystemMsg(text) {
@@ -485,9 +534,10 @@ async function send(text) {
   text = (text || "").trim();
   if (!text || streaming) return;
 
+  const gen = chatGen;
   messages.push({ role: "user", content: text });
   emptyState.style.display = "none";
-  addUserMsg(text);
+  const userDiv = addUserMsg(text);
   setChips(null);
   inputEl.value = "";
   autosize();
@@ -551,14 +601,23 @@ async function send(text) {
   stopBtn.hidden = true;
   abortCtrl = null;
 
+  // "New chat" was pressed while this reply streamed — the conversation was
+  // reset, so discard everything from this turn instead of leaking it in.
+  if (gen !== chatGen) return;
+
   if (raw.trim()) {
     messages.push({ role: "assistant", content: raw });
     const chips = renderAssistantInto(shell, raw, true);
     setChips(chips);
   } else {
+    // Failed turn: unwind BOTH history and the DOM so they can't diverge,
+    // and hand the text back to the composer for an easy retry.
     shell.remove();
+    userDiv.remove();
+    messages.pop();
     if (!errored) addSystemMsg("No reply received — try again.");
-    messages.pop(); // drop the unanswered user turn so history stays valid
+    inputEl.value = text;
+    autosize();
     if (!messages.length) emptyState.style.display = "";
   }
   store.set("sty_messages", messages.slice(-40));
@@ -640,6 +699,8 @@ document.querySelectorAll(".starter").forEach(b => (b.onclick = () => send(b.dat
 // ---------- profile modal ----------
 function openModal() {
   modal.hidden = false;
+  // First run must complete the quiz; returning users can dismiss.
+  $("modalClose").hidden = !profile;
   document.querySelectorAll(".pill-row").forEach(row => {
     const name = row.dataset.name;
     const current = profile ? profile[name] : null;
@@ -681,12 +742,15 @@ $("profileForm").addEventListener("submit", e => {
   store.set("sty_profile", profile);
   modal.hidden = true;
   toast("Profile saved — styling everything to you");
-  renderHistory();          // re-render so shop links use the new region
+  // Re-rendering mid-stream would detach the live reply's DOM node —
+  // skip it; region-link refresh happens on the next natural render.
+  if (!streaming) renderHistory();
   loadFeed(true);           // profile changed → fresh feed
 });
 
 $("profileBtn").onclick = openModal;
 $("newChatBtn").onclick = () => {
+  chatGen++;                                // invalidate any in-flight reply
   if (streaming && abortCtrl) abortCtrl.abort();
   messages = [];
   store.set("sty_messages", []);

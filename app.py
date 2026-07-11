@@ -107,6 +107,26 @@ def build_system(profile: dict) -> str:
 _hits: dict[str, deque] = defaultdict(deque)
 
 
+def client_ip(request: Request) -> str:
+    """Real client IP behind Railway's edge proxy (X-Forwarded-For),
+    falling back to the socket peer for direct/local access."""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "unknown"
+
+
+async def read_json_object(request: Request) -> dict:
+    """Parse the request body, tolerating malformed or non-object JSON."""
+    try:
+        body = await request.json()
+    except Exception:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
 def allow(ip: str) -> bool:
     now = time.time()
     q = _hits[ip]
@@ -150,14 +170,13 @@ def healthz():
 
 @app.post("/api/chat")
 async def chat(request: Request):
-    ip = request.client.host if request.client else "unknown"
-    if not allow(ip):
+    if not allow(client_ip(request)):
         return JSONResponse(
             {"error": "You're styling fast! Please wait a bit and try again."},
             status_code=429,
         )
 
-    body = await request.json()
+    body = await read_json_object(request)
     messages = clean_messages(body.get("messages"))
     if not messages:
         return JSONResponse({"error": "No message provided."}, status_code=400)
@@ -285,13 +304,12 @@ background, soft shadow" adapted to the piece.
 
 @app.post("/api/feed")
 async def feed(request: Request):
-    ip = request.client.host if request.client else "unknown"
-    if not allow(ip):
+    if not allow(client_ip(request)):
         return JSONResponse(
             {"error": "You're refreshing fast! Please wait a bit."}, status_code=429
         )
 
-    body = await request.json()
+    body = await read_json_object(request)
     profile = body.get("profile") if isinstance(body.get("profile"), dict) else {}
     profile = {str(k)[:40]: str(v)[:200] for k, v in list(profile.items())[:12]}
     ctx = body.get("context") if isinstance(body.get("context"), dict) else {}

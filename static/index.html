@@ -92,6 +92,7 @@
 <!-- ============ ONBOARDING / PROFILE ============ -->
 <div id="modal" class="modal" hidden>
   <div class="modal-card">
+    <button type="button" id="modalClose" class="modal-close" aria-label="Close" hidden>✕</button>
     <p class="empty-kicker">Style profile</p>
     <h2>Make it <em>yours</em></h2>
     <p class="muted">30 seconds — your feed and stylist are built from this. Everything stays on your device.</p>
@@ -100,15 +101,15 @@
         <span>First name <small>(for your daily edit)</small></span>
         <input type="text" id="nameInput" class="text-input" placeholder="e.g. Harshit" maxlength="30" autocomplete="given-name">
       </label>
-      <label class="field">
+      <div class="field">
         <span>Shopping for</span>
         <div class="pill-row" data-name="gender">
           <button type="button" class="pill" data-v="menswear">Menswear</button>
           <button type="button" class="pill" data-v="womenswear">Womenswear</button>
           <button type="button" class="pill" data-v="anything that fits my vibe">No preference</button>
         </div>
-      </label>
-      <label class="field">
+      </div>
+      <div class="field">
         <span>Region</span>
         <div class="pill-row" data-name="region">
           <button type="button" class="pill" data-v="India">India</button>
@@ -116,16 +117,16 @@
           <button type="button" class="pill" data-v="United Kingdom">UK</button>
           <button type="button" class="pill" data-v="Other / Global">Other</button>
         </div>
-      </label>
-      <label class="field">
+      </div>
+      <div class="field">
         <span>Budget feel</span>
         <div class="pill-row" data-name="budget">
           <button type="button" class="pill" data-v="budget-friendly, value first">Savvy</button>
           <button type="button" class="pill" data-v="mid-range, quality basics">Mid-range</button>
           <button type="button" class="pill" data-v="premium, invest in pieces">Premium</button>
         </div>
-      </label>
-      <label class="field">
+      </div>
+      <div class="field">
         <span>Your vibe <small>(pick any)</small></span>
         <div class="pill-row multi" data-name="style">
           <button type="button" class="pill" data-v="clean minimalist">Minimalist</button>
@@ -135,7 +136,7 @@
           <button type="button" class="pill" data-v="athleisure">Athleisure</button>
           <button type="button" class="pill" data-v="ethnic / fusion">Ethnic&nbsp;fusion</button>
         </div>
-      </label>
+      </div>
       <label class="field">
         <span>Anything else? <small>(fit, sizes, colors you avoid…)</small></span>
         <input type="text" id="notesInput" class="text-input" placeholder="e.g. slim fit, size M, no bright yellow" maxlength="180">
