@@ -113,6 +113,16 @@ function toast(msg) {
   }, 2200);
 }
 
+// tactile feedback: a whisper of haptics on meaningful moments (no-op on desktop)
+const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+// spring-pop an element (hearts, badges) — restartable
+function pop(el) {
+  if (!el) return;
+  el.classList.remove("pop");
+  void el.offsetWidth;
+  el.classList.add("pop");
+}
+
 function scrollToBottom(force) {
   const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 240;
   if (force || nearBottom) window.scrollTo({ top: document.body.scrollHeight });
@@ -260,6 +270,8 @@ function placeFeedCard(c) {
         pushTaste("loved", look);
         saveBtn.classList.add("on");
         saveBtn.innerHTML = heartIcon(true);
+        pop(saveBtn);
+        buzz(10);
         toast("Saved to your looks");
       }
       store.set("sty_saved", saved);
@@ -369,7 +381,12 @@ function readPillRow(name) {
 }
 
 function setGreeting(text) {
-  if (text) $("feedGreeting").textContent = text; // roman display voice
+  if (!text) return;
+  const g = $("feedGreeting");
+  g.textContent = text; // roman display voice
+  g.classList.remove("reveal");
+  void g.offsetWidth;
+  g.classList.add("reveal");
 }
 
 function renderFeed(data) {
@@ -595,6 +612,8 @@ function openSheet(look) {
       saved.push(look);
       btn.classList.add("saved");
       btn.innerHTML = `${heartIcon(true)}<span>Saved</span>`;
+      pop(btn);
+      buzz(10);
       toast("Saved to your looks");
     }
     store.set("sty_saved", saved);
@@ -989,6 +1008,8 @@ document.addEventListener("click", e => {
       saved.push(look);
       saveBtn.classList.add("saved");
       saveBtn.innerHTML = heartIcon(true);
+      pop(saveBtn);
+      buzz(10);
       toast("Saved to your looks");
     }
     store.set("sty_saved", saved);
@@ -1259,7 +1280,6 @@ $("eventForm").addEventListener("submit", e => {
 // ---------- the closet (her real wardrobe — the moat) ----------
 // Every photographed piece is sunk effort that makes this HER app: the
 // catalogue, thumbnails and wear counts live only in localStorage.
-const CLOSET_ICON = { ...CAT_ICON, set: "i-dress", bag: "i-bag" };
 const MILESTONES = [
   [1, "First hanger in"],
   [4, "Dress-me unlocked"],
@@ -1301,14 +1321,19 @@ function closetNudge() {
 
 function renderCloset() {
   const grid = $("closetGrid");
-  grid.innerHTML = closet.map(c => `
+  grid.innerHTML = closet.map(c => {
+    const hex = (c.palette || []).find(p => /^#[0-9a-fA-F]{3,8}$/.test(String(p)));
+    const mount = hex ? `background:color-mix(in srgb, ${esc(hex)} 16%, var(--bg-soft))` : "";
+    return `
     <div class="closet-card" data-cid="${esc(c.id)}">
-      <img src="${esc(c.thumb)}" alt="${esc(c.name)}">
-      <span class="closet-cat">${icon(CLOSET_ICON[c.category] || CAT_ICON.other, "icon sm")}</span>
+      <div class="closet-photo" style="${mount}"><img src="${esc(c.thumb)}" alt="${esc(c.name)}"></div>
       <button class="closet-del" data-del aria-label="Remove ${esc(c.name)}">${icon("i-x", "icon sm")}</button>
-      ${c.worn ? `<span class="closet-worn">${c.worn}×</span>` : ""}
-      <span class="closet-name">${esc(c.name)}</span>
-    </div>`).join("");
+      <div class="closet-meta">
+        <span class="closet-name">${esc(c.name)}</span>
+        <span class="closet-sub">${hex ? `<span class="closet-swatch" style="background:${esc(hex)}"></span>` : ""}${esc(c.category)}${c.worn ? ` · worn ${c.worn}×` : ""}</span>
+      </div>
+    </div>`;
+  }).join("");
   $("closetEmpty").style.display = closet.length ? "none" : "";
 
   // progress + level
@@ -1341,7 +1366,17 @@ function renderCloset() {
 function celebrateMilestone(before, after) {
   const hit = MILESTONES.find(m => before < m[0] && after >= m[0]);
   if (!hit) return;
-  toast(`${hit[0]} piece${hit[0] === 1 ? "" : "s"} — ${hit[1]}`);
+  const el = $("milestone");
+  $("milestoneCount").textContent = `${hit[0]} piece${hit[0] === 1 ? "" : "s"} in your closet`;
+  $("milestoneName").textContent = hit[1];
+  el.classList.remove("out");
+  el.hidden = false;
+  buzz(16);
+  clearTimeout(el._t);
+  el._t = setTimeout(() => {
+    el.classList.add("out");
+    setTimeout(() => { el.hidden = true; el.classList.remove("out"); }, 340);
+  }, 1500);
   const bar = $("closetBarFill");
   bar.classList.remove("glow");
   void bar.offsetWidth;
@@ -1490,9 +1525,9 @@ function renderDressResult(data) {
   $("dressResult").innerHTML = `
     <h2>${esc(data.title)}</h2>
     <p class="sheet-why">${esc(data.why || "")}</p>
-    <div class="dress-strip">${pieces.map(p => `
+    <div class="dress-strip">${pieces.map((p, i) => `
       <figure class="dress-piece">
-        <img src="${esc(p.thumb)}" alt="${esc(p.name)}">
+        <img src="${esc(p.thumb)}" alt="${esc(p.name)}" style="animation-delay:${i * 80}ms">
         <figcaption>${esc(p.name)}</figcaption>
       </figure>`).join("")}
     </div>
@@ -1511,6 +1546,7 @@ function renderDressResult(data) {
     store.set("sty_closet", closet);
     renderCloset();
     closeDress();
+    buzz(12);
     toast("Logged — cost-per-wear just dropped");
   };
 }
@@ -1562,6 +1598,161 @@ $("newChatBtn").onclick = () => {
   };
 })();
 
+// ---------- first-run onboarding (one question per screen) ----------
+const OB_STEPS = [
+  { type: "welcome" },
+  { key: "name", type: "text", q: "What should we call you?",
+    sub: "Just for your daily edit — nothing else.", ph: "Your first name", optional: true },
+  { key: "gender", q: "Who are we dressing?",
+    opts: [["womenswear", "Her — womenswear"], ["menswear", "Him — menswear"],
+           ["anything that fits my vibe", "Surprise me"]] },
+  { key: "age", q: "Your decade?", sub: "Styling changes with it — current at every age.",
+    optional: true,
+    opts: [["in my 20s", "20s"], ["in my 30s", "30s"], ["in my 40s", "40s"], ["in my 50s", "50s+"]] },
+  { key: "region", q: "Where in the world?",
+    sub: "Sets your weather, your retailers and your prices.",
+    opts: [["India", "India"], ["United States", "United States"],
+           ["United Kingdom", "United Kingdom"], ["Other / Global", "Somewhere else"]] },
+  { key: "dresscode", q: "Workdays call for…",
+    opts: [["business formal", "Business formal"], ["business casual", "Business casual"],
+           ["smart casual office", "Smart casual"], ["no dress code", "No dress code"]] },
+  { key: "budget", q: "How do you like to spend?",
+    opts: [["budget-friendly, value first", "Savvy — value first"],
+           ["mid-range, quality basics", "Mid-range, quality basics"],
+           ["premium, invest in pieces", "Premium — invest in pieces"]] },
+  { key: "style", q: "Pick your vibes", sub: "As many as feel like you.", multi: true,
+    opts: [["clean minimalist", "Minimalist"], ["elegant classic", "Elegant classic"],
+           ["smart casual", "Smart casual"], ["boho / relaxed feminine", "Boho"],
+           ["glam / statement", "Glam"], ["athleisure", "Athleisure"],
+           ["ethnic / fusion", "Ethnic & fusion"]] },
+  { type: "building" },
+];
+let obAnswers = {};
+let obIndex = 0;
+
+function startOnboarding() {
+  obAnswers = {};
+  $("onboard").classList.remove("closing");
+  $("onboard").hidden = false;
+  renderObStep(0);
+}
+
+function renderObStep(idx) {
+  obIndex = idx;
+  const s = OB_STEPS[idx];
+  const host = $("obStep");
+  const qSteps = OB_STEPS.filter(x => x.key);
+  const qPos = qSteps.indexOf(s) + 1;
+  $("obBarFill").style.width = `${Math.round(idx / (OB_STEPS.length - 1) * 100)}%`;
+  $("obBack").hidden = !s.key || idx === 0;
+
+  if (s.type === "welcome") {
+    host.innerHTML = `
+      <div class="ob-art" aria-hidden="true"></div>
+      <p class="ob-kicker">Stylist</p>
+      <h2 class="ob-q">Dressing you for the <em>life you actually live</em></h2>
+      <p class="ob-sub">One decided outfit every morning. A stylist on call. Your own closet, made smart. Private by design — everything stays on your device.</p>
+      <button type="button" class="primary-btn ob-cta" id="obGo">Set me up</button>
+      <p class="ob-sub tiny">About 30 seconds</p>`;
+    $("obGo").onclick = () => { buzz(8); renderObStep(idx + 1); };
+  } else if (s.type === "text") {
+    host.innerHTML = `
+      <p class="ob-kicker">${qPos} of ${qSteps.length}</p>
+      <h2 class="ob-q">${esc(s.q)}</h2>
+      ${s.sub ? `<p class="ob-sub">${esc(s.sub)}</p>` : ""}
+      <input type="text" class="text-input ob-input" id="obText" placeholder="${esc(s.ph || "")}"
+             maxlength="30" autocomplete="given-name" enterkeyhint="next"
+             value="${esc(obAnswers[s.key] || "")}">
+      <button type="button" class="primary-btn ob-cta" id="obNext">Continue</button>
+      ${s.optional ? `<button type="button" class="linklike ob-skip" id="obSkip">Skip for now</button>` : ""}`;
+    const go = () => { obAnswers[s.key] = $("obText").value.trim(); renderObStep(idx + 1); };
+    $("obNext").onclick = go;
+    $("obText").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+    const skip = $("obSkip");
+    if (skip) skip.onclick = () => { obAnswers[s.key] = ""; renderObStep(idx + 1); };
+    setTimeout(() => $("obText").focus({ preventScroll: true }), 350);
+  } else if (s.type === "building") {
+    host.innerHTML = `
+      <p class="ob-kicker">Nearly there${obAnswers.name ? ", " + esc(obAnswers.name) : ""}</p>
+      <h2 class="ob-q">Stitching your <em>first edit…</em></h2>
+      <p class="ob-sub" id="obStatus">Reading today's weather…</p>
+      <div class="ob-loader">
+        <span class="sk-line w70"></span><span class="sk-line w50"></span><span class="sk-line w30"></span>
+      </div>`;
+    const lines = ["Reading today's weather…", "Choosing silhouettes for you…", "Setting the colour story…"];
+    let li = 0;
+    const tick = setInterval(() => {
+      li = (li + 1) % lines.length;
+      const st = $("obStatus");
+      if (st) st.textContent = lines[li];
+    }, 800);
+    finishOnboarding(tick);
+    return finalizeStepEntrance(host);
+  } else {
+    const current = obAnswers[s.key];
+    const isOn = v => s.multi ? Array.isArray(current) && current.includes(v) : current === v;
+    host.innerHTML = `
+      <p class="ob-kicker">${qPos} of ${qSteps.length}</p>
+      <h2 class="ob-q">${esc(s.q)}</h2>
+      ${s.sub ? `<p class="ob-sub">${esc(s.sub)}</p>` : ""}
+      <div class="ob-opts">${s.opts.map(([v, label]) =>
+        `<button type="button" class="pill${isOn(v) ? " on" : ""}" data-v="${esc(v)}">${esc(label)}</button>`).join("")}
+      </div>
+      ${s.multi ? `<button type="button" class="primary-btn ob-cta" id="obNext">Continue</button>` : ""}
+      ${s.optional && !s.multi ? `<button type="button" class="linklike ob-skip" id="obSkip">Skip for now</button>` : ""}`;
+    host.querySelectorAll(".pill").forEach(p => {
+      p.onclick = () => {
+        buzz(8);
+        if (s.multi) {
+          p.classList.toggle("on");
+          obAnswers[s.key] = [...host.querySelectorAll(".pill.on")].map(x => x.dataset.v);
+        } else {
+          host.querySelectorAll(".pill").forEach(x => x.classList.toggle("on", x === p));
+          obAnswers[s.key] = p.dataset.v;
+          setTimeout(() => { if (obIndex === idx) renderObStep(idx + 1); }, 260);
+        }
+      };
+    });
+    const next = $("obNext");
+    if (next) next.onclick = () => renderObStep(idx + 1);
+    const skip = $("obSkip");
+    if (skip) skip.onclick = () => { obAnswers[s.key] = ""; renderObStep(idx + 1); };
+  }
+  finalizeStepEntrance(host);
+}
+
+function finalizeStepEntrance(host) {
+  host.classList.remove("in");
+  void host.offsetWidth;
+  host.classList.add("in");
+}
+
+$("obBack").onclick = () => { if (obIndex > 0) renderObStep(obIndex - 1); };
+
+function finishOnboarding(tick) {
+  profile = {
+    name: (obAnswers.name || "").trim(),
+    gender: obAnswers.gender || "womenswear",
+    age: obAnswers.age || "",
+    region: obAnswers.region || "India",
+    dresscode: obAnswers.dresscode || "business casual",
+    budget: obAnswers.budget || "mid-range, quality basics",
+    style: (Array.isArray(obAnswers.style) ? obAnswers.style.join(", ") : "") || "open to suggestions",
+    brands: "",
+    notes: "",
+  };
+  store.set("sty_profile", profile);
+  buzz(14);
+  renderDrops();
+  loadFeed(true); // starts streaming beneath the overlay
+  setTimeout(() => {
+    clearInterval(tick);
+    const ob = $("onboard");
+    ob.classList.add("closing");
+    setTimeout(() => { ob.hidden = true; ob.classList.remove("closing"); }, 460);
+  }, 2100);
+}
+
 // ---------- boot ----------
 renderHistory();
 refreshSavedBadge();
@@ -1570,7 +1761,7 @@ renderDrops();
 renderCloset();
 pruneEvents();
 renderEventChip();
-if (!profile) openModal();
+if (!profile) startOnboarding();
 else loadFeed(false);
 
 if ("serviceWorker" in navigator) {

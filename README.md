@@ -8,6 +8,9 @@ The five daily collections are structured for her week: **Today's answer** (deci
 
 ## What it does
 
+**A first run that feels like a stylist, not a form**
+- Cinematic conversational onboarding: one question per screen (name → who we're dressing → decade → region → dress code → budget → vibes), auto-advancing answers, a living color-aura mark, and a "stitching your first edit…" finale that dissolves straight into the streaming feed. ~30 seconds, zero typing except her name.
+
 **For You — a daily visual feed (the flagship surface)**
 - Every day, one Claude call curates **5 personal collections**: weather-driven, work, evening, weekend, and one trend-forward wildcard — tailored to your gender presentation, region, budget, vibes, and fit notes.
 - **The feed streams**: the greeting and each collection render the moment the model finishes composing them (server-side incremental JSON extraction over SSE) — first card in seconds, not after full generation.
