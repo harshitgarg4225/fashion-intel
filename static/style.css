@@ -779,6 +779,93 @@ a { color: inherit; }
 .selfie-thumb { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); }
 .selfie-note { color: var(--ink-soft); font-size: 11px; line-height: 15px; margin: var(--s2) 0 0; }
 
+/* ============ the closet ============ */
+.closet-sub { font-size: var(--t-body-sm); line-height: 19px; margin: var(--s3) 0 0; max-width: 46ch; }
+.closet-progress { margin-top: var(--s5); }
+.closet-bar {
+  height: 6px; border-radius: var(--r-pill); overflow: hidden;
+  background: var(--line);
+}
+.closet-bar-fill {
+  display: block; height: 100%; width: 0;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  transition: width var(--t-slow) var(--ease-out);
+}
+.closet-bar-fill.glow { animation: barGlow 900ms var(--ease-out); }
+@keyframes barGlow {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+.closet-level {
+  font-size: var(--t-caption); line-height: 17px; color: var(--ink-soft);
+  margin: var(--s2) 0 0;
+}
+.closet-level b { color: var(--ink); font-weight: 600; }
+.closet-busy { margin-top: var(--s3); }
+.refresh-btn.locked { opacity: .55; }
+
+.closet-grid {
+  display: grid; gap: var(--s3); padding: var(--s4);
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+}
+.closet-card {
+  position: relative; aspect-ratio: 4 / 5; border-radius: var(--r-lg);
+  overflow: hidden; background: var(--bg-soft); box-shadow: var(--e1);
+  animation: cardIn var(--t-med) var(--ease-out) both;
+}
+.closet-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.closet-card::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(12,10,8,.62), transparent 46%);
+}
+.closet-name {
+  position: absolute; left: 8px; right: 8px; bottom: 7px; z-index: 1;
+  color: var(--overlay-ink); font-size: 11px; line-height: 14px; font-weight: 600;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.closet-cat {
+  position: absolute; top: 6px; left: 6px; z-index: 1;
+  width: 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(12,10,8,.5); color: var(--overlay-ink);
+  backdrop-filter: blur(6px);
+}
+.closet-del {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  width: 26px; height: 26px; border-radius: 50%; border: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(12,10,8,.5); color: var(--overlay-ink);
+  backdrop-filter: blur(6px);
+  transition: background var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.closet-del:hover { background: rgba(12,10,8,.72); }
+.closet-del:active { transform: scale(.9); }
+.closet-worn {
+  position: absolute; right: 6px; bottom: 40px; z-index: 1;
+  font-size: 10px; line-height: 14px; font-weight: 600;
+  color: var(--overlay-ink); background: rgba(12,10,8,.5);
+  border-radius: var(--r-pill); padding: 1px 7px; backdrop-filter: blur(6px);
+}
+
+/* dress-me result */
+.dress-wait-stage { aspect-ratio: auto; min-height: 180px; margin-top: var(--s4); }
+.dress-strip { display: flex; gap: var(--s3); overflow-x: auto; padding: var(--s3) 0 var(--s2); scrollbar-width: none; }
+.dress-strip::-webkit-scrollbar { display: none; }
+.dress-piece { flex: 0 0 96px; margin: 0; }
+.dress-piece img {
+  width: 96px; height: 118px; object-fit: cover;
+  border-radius: var(--r-md); box-shadow: var(--e1);
+  animation: cardIn var(--t-med) var(--ease-out) both;
+}
+.dress-piece figcaption {
+  font-size: 10.5px; line-height: 14px; color: var(--ink-soft);
+  margin-top: 4px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.dress-moves { margin: var(--s2) 0 0; padding-left: var(--s5); }
+.dress-moves li { font-size: var(--t-body-sm); line-height: 20px; margin: 4px 0; }
+
 /* ============ toast ============ */
 .toast {
   position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);

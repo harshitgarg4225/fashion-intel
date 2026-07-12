@@ -16,6 +16,7 @@ let messages = store.get("sty_messages", []);   // [{role, content}]
 let saved = store.get("sty_saved", []);          // [look]
 let taste = store.get("sty_taste", { loved: [], less: [] });
 let events = store.get("sty_events", []);        // [{occasion, date, vibe, note}]
+let closet = store.get("sty_closet", []);        // [{id, name, category, …, thumb, worn}]
 let tryonEnabled = false;                        // set from /api/config
 const CLOTHING = new Set(["top", "bottom", "dress", "outerwear"]);
 let streaming = false;
@@ -663,6 +664,7 @@ function closeModal() {
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (!sheetEl.hidden) closeSheet();
+  else if (!$("dressModal").hidden) $("dressModal").hidden = true;
   else if (!modal.hidden && profile) closeModal();
 });
 $("modalClose").onclick = closeModal;
@@ -793,18 +795,18 @@ function addUserMsg(text, imgSrc) {
 // ---------- photo styling (visual search) ----------
 let pendingImage = null; // { media_type, data, thumb }
 
-async function prepareImage(file) {
+async function prepareImage(file, max = 1024, thumbMax = 220) {
   const bmp = await createImageBitmap(file);
-  const scale = max => {
-    const r = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const scale = (m, q = 0.82) => {
+    const r = Math.min(1, m / Math.max(bmp.width, bmp.height));
     const cv = document.createElement("canvas");
     cv.width = Math.max(1, Math.round(bmp.width * r));
     cv.height = Math.max(1, Math.round(bmp.height * r));
     cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
-    return cv.toDataURL("image/jpeg", 0.82);
+    return cv.toDataURL("image/jpeg", q);
   };
-  const full = scale(1024);
-  const thumb = scale(220);
+  const full = scale(max);
+  const thumb = scale(thumbMax, 0.75);
   return { media_type: "image/jpeg", data: full.split(",")[1], thumb };
 }
 
@@ -1006,8 +1008,10 @@ function switchTab(which) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === which));
   $("feedPanel").classList.toggle("active", which === "feed");
   $("chatPanel").classList.toggle("active", which === "chat");
+  $("closetPanel").classList.toggle("active", which === "closet");
   $("savedPanel").classList.toggle("active", which === "saved");
   if (which === "saved") renderSaved();
+  if (which === "closet") renderCloset();
   if (which === "feed") loadFeed(false);
 }
 document.querySelectorAll(".tab").forEach(tab => (tab.onclick = () => switchTab(tab.dataset.tab)));
@@ -1252,6 +1256,270 @@ $("eventForm").addEventListener("submit", e => {
   else send(msg);
 });
 
+// ---------- the closet (her real wardrobe — the moat) ----------
+// Every photographed piece is sunk effort that makes this HER app: the
+// catalogue, thumbnails and wear counts live only in localStorage.
+const CLOSET_ICON = { ...CAT_ICON, set: "i-dress", bag: "i-bag" };
+const MILESTONES = [
+  [1, "First hanger in"],
+  [4, "Dress-me unlocked"],
+  [8, "Capsule forming"],
+  [14, "Mix-and-match deep"],
+  [22, "Signature closet"],
+  [35, "Full wardrobe"],
+];
+const CLOSET_MAX = 120;
+
+const catCount = c => closet.filter(x => x.category === c).length;
+
+function outfitCombos() {
+  const shoes = Math.max(1, catCount("footwear"));
+  return (catCount("top") * catCount("bottom")
+          + catCount("dress") + catCount("set")) * shoes;
+}
+
+function canDress() {
+  const cats = new Set(closet.map(x => x.category));
+  return closet.length >= 4 &&
+    (cats.has("dress") || cats.has("set") || (cats.has("top") && cats.has("bottom")));
+}
+
+// What's blocking a complete outfit — one actionable line, or null when set.
+function closetNudge() {
+  if (!closet.length) return null;
+  const cats = new Set(closet.map(x => x.category));
+  const wearable = cats.has("dress") || cats.has("set") || (cats.has("top") && cats.has("bottom"));
+  if (!wearable) {
+    if (cats.has("top")) return "Add a bottom (or a dress) to unlock outfits";
+    if (cats.has("bottom")) return "Add a top (or a dress) to unlock outfits";
+    return "Add a top + bottom, or a dress, to unlock outfits";
+  }
+  if (closet.length < 4) return `${4 - closet.length} more piece${closet.length === 3 ? "" : "s"} to unlock Dress me`;
+  if (!cats.has("footwear")) return "No shoes yet — add footwear to finish looks";
+  return null;
+}
+
+function renderCloset() {
+  const grid = $("closetGrid");
+  grid.innerHTML = closet.map(c => `
+    <div class="closet-card" data-cid="${esc(c.id)}">
+      <img src="${esc(c.thumb)}" alt="${esc(c.name)}">
+      <span class="closet-cat">${icon(CLOSET_ICON[c.category] || CAT_ICON.other, "icon sm")}</span>
+      <button class="closet-del" data-del aria-label="Remove ${esc(c.name)}">${icon("i-x", "icon sm")}</button>
+      ${c.worn ? `<span class="closet-worn">${c.worn}×</span>` : ""}
+      <span class="closet-name">${esc(c.name)}</span>
+    </div>`).join("");
+  $("closetEmpty").style.display = closet.length ? "none" : "";
+
+  // progress + level
+  const prog = $("closetProgress");
+  if (!closet.length) prog.hidden = true;
+  else {
+    prog.hidden = false;
+    const n = closet.length;
+    const level = [...MILESTONES].reverse().find(m => n >= m[0]);
+    const next = MILESTONES.find(m => n < m[0]);
+    $("closetBarFill").style.width = next ? `${Math.round(n / next[0] * 100)}%` : "100%";
+    const combos = outfitCombos();
+    $("closetLevel").innerHTML =
+      `<b>${n} piece${n === 1 ? "" : "s"} · ${esc(level ? level[1] : "")}</b>` +
+      (combos >= 2 ? ` — ${combos} outfit${combos === 1 ? "" : "s"} in here` : "") +
+      (next ? ` · ${next[0] - n} to “${esc(next[1])}”` : "");
+  }
+
+  const nudge = closetNudge();
+  const cov = $("closetCoverage");
+  cov.hidden = !nudge;
+  if (nudge) cov.textContent = nudge;
+
+  $("dressMeBtn").classList.toggle("locked", !canDress());
+  const badge = $("closetCount");
+  badge.textContent = closet.length;
+  badge.hidden = closet.length === 0;
+}
+
+function celebrateMilestone(before, after) {
+  const hit = MILESTONES.find(m => before < m[0] && after >= m[0]);
+  if (!hit) return;
+  toast(`${hit[0]} piece${hit[0] === 1 ? "" : "s"} — ${hit[1]}`);
+  const bar = $("closetBarFill");
+  bar.classList.remove("glow");
+  void bar.offsetWidth;
+  bar.classList.add("glow");
+}
+
+$("closetAdd").onclick = () => $("closetInput").click();
+$("closetInput").onchange = async () => {
+  const files = [...$("closetInput").files].filter(f => f.type.startsWith("image/")).slice(0, 12);
+  $("closetInput").value = "";
+  if (!files.length) return;
+  if (closet.length + files.length > CLOSET_MAX) {
+    toast(`Closet holds ${CLOSET_MAX} pieces — remove a few first`);
+    return;
+  }
+  const busy = $("closetBusy");
+  let added = 0;
+  for (let i = 0; i < files.length; i++) {
+    busy.textContent = files.length > 1
+      ? `Cataloguing piece ${i + 1} of ${files.length}…`
+      : "Cataloguing your piece…";
+    busy.hidden = false;
+    try {
+      const img = await prepareImage(files[i], 900, 176);
+      const res = await fetch("/api/closet/item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: { media_type: img.media_type, data: img.data } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't catalogue that piece.");
+      if (!data.is_item) { toast(data.reason || "That didn't look like a single piece — try one item per photo"); continue; }
+      const before = closet.length;
+      closet.push({
+        id: `c${Date.now().toString(36)}${i}`,
+        name: data.name, category: data.category,
+        colors: data.colors || [], palette: data.palette || [],
+        fabric: data.fabric || "", formality: data.formality || [],
+        warmth: data.warmth || "", pairs: data.pairs_with || "",
+        thumb: img.thumb, worn: 0, at: todayKey(),
+      });
+      store.set("sty_closet", closet);
+      added++;
+      renderCloset();
+      celebrateMilestone(before, closet.length);
+    } catch (err) {
+      toast(err.message || "Couldn't catalogue that piece");
+    }
+  }
+  busy.hidden = true;
+  if (added && !canDress()) toast(closetNudge() || `${added} piece${added === 1 ? "" : "s"} in`);
+};
+
+$("closetGrid").addEventListener("click", e => {
+  const del = e.target.closest("[data-del]");
+  if (!del) return;
+  const card = e.target.closest(".closet-card");
+  closet = closet.filter(c => c.id !== card.dataset.cid);
+  store.set("sty_closet", closet);
+  card.remove();
+  renderCloset();
+  toast("Removed from your closet");
+});
+
+// ---------- dress me (weather + plan + mood → outfit from owned pieces) ----------
+const dressModal = $("dressModal");
+let dressAvoid = [];               // titles already shown this session
+let dressCtx = null;               // {occasion, mood} for "show me another"
+
+function openDress() {
+  if (!canDress()) {
+    switchTab("closet");
+    toast(closetNudge() || "Add a few pieces first — a top + bottom, or a dress");
+    return;
+  }
+  dressAvoid = [];
+  $("dressFormWrap").hidden = false;
+  $("dressResult").hidden = true;
+  dressModal.hidden = false;
+  const w = $("dressWeather");
+  w.hidden = true;
+  getWeather().then(t => {
+    if (t && dressModal.hidden === false) { w.textContent = `Styling around today's weather · ${t}`; w.hidden = false; }
+  });
+}
+function closeDress() { dressModal.hidden = true; }
+$("dressMeBtn").onclick = openDress;
+$("dressClose").onclick = closeDress;
+dressModal.addEventListener("click", e => { if (e.target === dressModal) closeDress(); });
+
+const wardrobeLines = () => closet.map(c =>
+  `${c.id}: ${c.name} — ${c.category}` +
+  `${c.colors.length ? ", " + c.colors.join("/") : ""}` +
+  `${c.fabric ? ", " + c.fabric : ""}` +
+  `${c.formality.length ? ", works for " + c.formality.join("/") : ""}` +
+  `${c.warmth ? `, ${c.warmth} weight` : ""}`);
+
+async function runDress(occasion, mood) {
+  dressCtx = { occasion, mood };
+  $("dressFormWrap").hidden = true;
+  const box = $("dressResult");
+  box.hidden = false;
+  box.innerHTML = `<h2>Raiding <em>your closet…</em></h2>
+    <div class="tryon-stage dress-wait-stage"><div class="tryon-wait">Weighing ${closet.length} pieces against the weather, the plan and the mood.</div></div>`;
+
+  try {
+    const weather = await getWeather();
+    const res = await fetch("/api/closet/dress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile: profile || {},
+        wardrobe: wardrobeLines(),
+        weather: weather || "unknown",
+        occasion, mood,
+        avoid: dressAvoid,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't style this one.");
+    renderDressResult(data);
+  } catch (err) {
+    box.innerHTML = `<h2>The closet <em>hiccuped</em></h2>
+      <p class="tryon-err">${esc(err.message || "Try again in a minute.")}</p>
+      <button type="button" class="primary-btn" id="dressRetry">Try again</button>`;
+    $("dressRetry").onclick = () => runDress(occasion, mood);
+  }
+}
+
+function renderDressResult(data) {
+  dressAvoid = [...dressAvoid, String(data.title).slice(0, 60)].slice(-8);
+  const pieces = data.item_ids.map(id => closet.find(c => c.id === id)).filter(Boolean);
+  const moves = (data.styling_moves || []).slice(0, 3).map(m => `<li>${esc(m)}</li>`).join("");
+  const gap = data.gap_name && data.gap_search ? `
+    <p class="sheet-section">The finishing piece</p>
+    <div class="item">
+      <div class="item-top">
+        <span class="item-name">${esc(data.gap_name)}</span>
+        ${data.gap_price ? `<span class="item-price">${esc(data.gap_price)}</span>` : ""}
+      </div>
+      <div class="shop-row">${retailersFor().map(([name, fn], i) =>
+        `<a class="shop-link${i === 0 ? " primary" : ""}" href="${esc(fn(data.gap_search))}" target="_blank" rel="noopener">${name}${icon("i-out", "icon sm")}</a>`).join("")}
+      </div>
+    </div>` : "";
+
+  $("dressResult").innerHTML = `
+    <h2>${esc(data.title)}</h2>
+    <p class="sheet-why">${esc(data.why || "")}</p>
+    <div class="dress-strip">${pieces.map(p => `
+      <figure class="dress-piece">
+        <img src="${esc(p.thumb)}" alt="${esc(p.name)}">
+        <figcaption>${esc(p.name)}</figcaption>
+      </figure>`).join("")}
+    </div>
+    ${moves ? `<p class="sheet-section">Styling moves</p><ul class="dress-moves">${moves}</ul>` : ""}
+    ${data.tip ? `<div class="tip-box">${icon("i-spark")}<span><b>Stylist's tip</b> — ${esc(data.tip)}</span></div>` : ""}
+    ${gap}
+    <div class="sheet-actions">
+      <button type="button" class="sheet-save" id="dressAgain">${icon("i-refresh")}<span>Show me another</span></button>
+      <button type="button" class="sheet-refine" id="dressWear">${icon("i-check")}<span>Wearing it</span></button>
+    </div>
+    <p class="fineprint">All from your own closet — nothing to buy${data.gap_name ? " (unless you want the finisher)" : ""}.</p>`;
+  $("dressAgain").onclick = () => runDress(dressCtx.occasion, dressCtx.mood);
+  $("dressWear").onclick = () => {
+    const ids = new Set(pieces.map(p => p.id));
+    closet = closet.map(c => ids.has(c.id) ? { ...c, worn: (c.worn || 0) + 1 } : c);
+    store.set("sty_closet", closet);
+    renderCloset();
+    closeDress();
+    toast("Logged — cost-per-wear just dropped");
+  };
+}
+
+$("dressForm").addEventListener("submit", e => {
+  e.preventDefault();
+  runDress(readPillRow("dmOccasion") || "going out", readPillRow("dmMood") || "confident, a little bold");
+});
+
 $("profileBtn").onclick = openModal;
 $("wipeBtn").onclick = () => {
   if (!confirm("Clear everything Stylist knows about you on this device? This removes your profile, taste, saved looks and chat history.")) return;
@@ -1299,6 +1567,7 @@ renderHistory();
 refreshSavedBadge();
 refreshTasteChip();
 renderDrops();
+renderCloset();
 pruneEvents();
 renderEventChip();
 if (!profile) openModal();

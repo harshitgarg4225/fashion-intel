@@ -659,6 +659,212 @@ async def feed(request: Request):
     )
 
 
+# ---------------------------------------------------------------------------
+# The Closet — her real wardrobe, photographed once, dressed forever.
+# One vision call catalogues each piece (~$0.003); one structured call
+# composes an outfit from ONLY what she owns. Photos and the catalogue live
+# in her browser — the server sees an image only during the catalogue call.
+# ---------------------------------------------------------------------------
+
+CLOSET_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "is_item": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "name": {"type": "string"},
+        "category": {"type": "string",
+                     "enum": ["top", "bottom", "dress", "set", "outerwear",
+                              "footwear", "bag", "accessory"]},
+        "colors": {"type": "array", "items": {"type": "string"}},
+        "palette": {"type": "array", "items": {"type": "string"}},
+        "fabric": {"type": "string"},
+        "formality": {"type": "array",
+                      "items": {"type": "string",
+                                "enum": ["casual", "smart casual", "office",
+                                         "evening", "festive", "active"]}},
+        "warmth": {"type": "string", "enum": ["light", "mid", "warm"]},
+        "pairs_with": {"type": "string"},
+    },
+    "required": ["is_item", "reason", "name", "category", "colors", "palette",
+                 "fabric", "formality", "warmth", "pairs_with"],
+    "additionalProperties": False,
+}
+
+CLOSET_SYSTEM = """\
+You are the closet curator of Stylist. The user photographs ONE piece from \
+their real wardrobe at a time; you catalogue it precisely so outfits can be \
+composed from it later.
+
+- name: specific and shoppable-sounding — color + fabric/cut + garment \
+("Rust satin midi skirt", not "skirt"). Title case first word only.
+- category: set = co-ord / kurta set / saree / lehenga. bag and jewellery \
+are their own categories.
+- colors: 1–3 plain color words, dominant first. palette: the same as hex.
+- formality: every context this piece genuinely works in.
+- warmth: light (breathable/summer), mid, warm (layering/winter).
+- pairs_with: one short phrase on its most natural pairing.
+- If the photo is NOT a single clothing/footwear/bag/jewellery item (a \
+person, a room, a screenshot, multiple garments in a pile), set is_item \
+false and say why in `reason` in one friendly sentence. Never identify or \
+describe people.
+- If a person is WEARING the item but one garment clearly dominates the \
+frame, catalogue that garment; otherwise is_item false.
+"""
+
+DRESS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "why": {"type": "string"},
+        "item_ids": {"type": "array", "items": {"type": "string"}},
+        "styling_moves": {"type": "array", "items": {"type": "string"}},
+        "gap_name": {"type": "string"},
+        "gap_search": {"type": "string"},
+        "gap_price": {"type": "string"},
+        "tip": {"type": "string"},
+    },
+    "required": ["title", "why", "item_ids", "styling_moves",
+                 "gap_name", "gap_search", "gap_price", "tip"],
+    "additionalProperties": False,
+}
+
+DRESS_SYSTEM = """\
+You are Stylist's dress-me engine. The user owns the wardrobe below — each \
+line is `id: description`. Compose ONE decisive outfit for the moment they \
+describe, using ONLY pieces from this wardrobe, referenced by id.
+
+Rules:
+- item_ids: 2–6 ids that exist in the wardrobe list. Never invent an id. \
+Build a complete outfit: a dress/set, or a top + bottom; add outerwear for \
+weather, footwear and a bag/jewellery whenever she owns suitable ones.
+- Respect the weather (warmth, rain), the occasion's dress code, and the \
+mood exactly. Respect her profile (fit notes, modesty, age) — never comment \
+on bodies.
+- title: 2–4 evocative words, magazine energy. Must not repeat any title in \
+avoid_titles — different title AND meaningfully different pieces.
+- why: 1–2 sentences of stylist logic for THIS combination.
+- styling_moves: 1–3 concrete, hands-on moves (front-tuck, sleeve roll, \
+knot, cuff, layering order) that lift these exact pieces.
+- gap_*: at most ONE purchasable piece that would genuinely complete this \
+outfit (name, precise retail search query, realistic local price range). If \
+nothing is missing, set all three to "". Never propose a gap when she owns \
+a workable equivalent.
+- tip: one insider line — how to wear it, not what to buy.
+"""
+
+
+def _wardrobe_lines(raw) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for w in raw[:120]:
+        if isinstance(w, str) and w.strip():
+            out.append(w.strip()[:160])
+    return out
+
+
+@app.post("/api/closet/item")
+async def closet_item(request: Request):
+    if not allow(client_ip(request)):
+        return JSONResponse(
+            {"error": "You're cataloguing fast! Give it a minute, then keep going."},
+            status_code=429)
+
+    body = await read_json_object(request)
+    image = body.get("image")
+    if not (isinstance(image, dict)
+            and image.get("media_type") in ("image/jpeg", "image/png", "image/webp")
+            and isinstance(image.get("data"), str)
+            and 0 < len(image["data"]) <= 4_000_000):
+        return JSONResponse({"error": "No photo received — try again."}, status_code=400)
+
+    try:
+        resp = await client.messages.create(
+            model=MODEL,
+            max_tokens=500,
+            system=CLOSET_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image",
+                     "source": {"type": "base64",
+                                "media_type": image["media_type"],
+                                "data": image["data"]}},
+                    {"type": "text", "text": "Catalogue this piece."},
+                ],
+            }],
+            output_config={"format": {"type": "json_schema",
+                                      "schema": CLOSET_ITEM_SCHEMA}},
+        )
+        return JSONResponse(json.loads(resp.content[0].text))
+    except anthropic.AuthenticationError:
+        return JSONResponse({"error": "Server is missing a valid ANTHROPIC_API_KEY."},
+                            status_code=502)
+    except anthropic.RateLimitError:
+        return JSONResponse({"error": "The curator is busy — try again in a minute."},
+                            status_code=502)
+    except Exception:
+        return JSONResponse({"error": "Couldn't read that piece — try another photo."},
+                            status_code=502)
+
+
+@app.post("/api/closet/dress")
+async def closet_dress(request: Request):
+    if not allow(client_ip(request)):
+        return JSONResponse(
+            {"error": "You're styling fast! Please wait a bit and try again."},
+            status_code=429)
+
+    body = await read_json_object(request)
+    wardrobe = _wardrobe_lines(body.get("wardrobe"))
+    if len(wardrobe) < 2:
+        return JSONResponse(
+            {"error": "Add a few more pieces first — I need at least a small closet to work with."},
+            status_code=400)
+
+    profile = body.get("profile") if isinstance(body.get("profile"), dict) else {}
+    profile = {str(k)[:40]: str(v)[:200] for k, v in list(profile.items())[:12]}
+    avoid = body.get("avoid") if isinstance(body.get("avoid"), list) else []
+
+    brief = {
+        "date": time.strftime("%A, %d %B %Y"),
+        "profile": profile or "not provided",
+        "weather": str(body.get("weather", "unknown"))[:120],
+        "occasion": str(body.get("occasion", "going out"))[:120],
+        "mood": str(body.get("mood", "confident"))[:80],
+        "wardrobe": wardrobe,
+        "avoid_titles": [str(x)[:60] for x in avoid[:10]],
+    }
+
+    try:
+        resp = await client.messages.create(
+            model=MODEL,
+            max_tokens=700,
+            system=DRESS_SYSTEM,
+            messages=[{"role": "user",
+                       "content": "Dress me from my closet:\n"
+                                  + json.dumps(brief, ensure_ascii=False)}],
+            output_config={"format": {"type": "json_schema", "schema": DRESS_SCHEMA}},
+        )
+        data = json.loads(resp.content[0].text)
+        # Drop any hallucinated ids so the client never renders a hole.
+        valid = {w.split(":", 1)[0].strip() for w in wardrobe}
+        data["item_ids"] = [i for i in data.get("item_ids", []) if i in valid]
+        if not data["item_ids"]:
+            return JSONResponse({"error": "Couldn't build a look from these pieces — add a top and a bottom (or a dress) and try again."},
+                                status_code=502)
+        return JSONResponse(data)
+    except anthropic.AuthenticationError:
+        return JSONResponse({"error": "Server is missing a valid ANTHROPIC_API_KEY."},
+                            status_code=502)
+    except anthropic.RateLimitError:
+        return JSONResponse({"error": "The stylist is busy — try again in a minute."},
+                            status_code=502)
+    except Exception:
+        return JSONResponse({"error": "The stylist hiccuped — try again."},
+                            status_code=502)
+
+
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")

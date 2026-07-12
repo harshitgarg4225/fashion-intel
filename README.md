@@ -18,6 +18,11 @@ The five daily collections are structured for her week: **Today's answer** (deci
 - **Taste loop**: "More like this / Less like this" feedback steers tomorrow's feed. "↻ New drop" regenerates on demand (previous titles are excluded).
 - If an image ever fails, cards fall back to an art-directed palette gradient — the feed never looks broken.
 
+**The Closet — her real wardrobe, dressed by AI (the moat)**
+- She photographs her pieces once; Claude vision catalogues each one (~$0.003/photo) — name, category, colours, fabric, formality, warmth — and it lives as a visual grid **on her device only**.
+- **"Dress me"**: pick the plan (work day, date night, festive…) and the mood (comfy, polished, stand out…); the weather attaches automatically. One model call composes a decisive outfit **only from pieces she owns** (ids validated server-side — hallucinated pieces are dropped), plus 1–3 hands-on styling moves, a stylist's tip, and at most **one "finishing piece" to shop** (that's the monetization staying alive inside a wear-what-you-own feature).
+- **Gamified sunk effort**: milestone ladder (First hanger in → Dress-me unlocked → Capsule forming → … → Full wardrobe) with a progress bar, outfit-math ("your 12 pieces hold 38 outfits"), coverage nudges ("no shoes yet"), and **wear logging** ("Wearing it" → per-piece wear counts, cost-per-wear energy). Every photo she takes deepens a catalogue no competitor can import — switching apps means re-shooting her whole wardrobe.
+
 **Stylist — streaming chat**
 - Ask for anything; replies stream in with **look cards** (now with hero imagery + palettes) and **quick-reply chips**.
 
@@ -45,7 +50,7 @@ Mobile-first editorial design, automatic dark mode. The backend uses the **async
 | Model | **Claude Haiku 4.5** by default ($1 / $5 per MTok — Anthropic's cheapest, and its speed makes it feel snappy). Structured outputs guarantee the feed JSON parses. |
 | Abuse | Built-in per-IP rate limit (40 req/hour by default). |
 
-The daily feed is **one model call per user per day** (cached client-side; refresh and profile edits regenerate). A feed ≈ 1k in + ~3k out ≈ **$0.016 on Haiku**. A chat turn is well under $0.01.
+The daily feed is **one model call per user per day** (cached client-side; refresh and profile edits regenerate). A feed ≈ 1k in + ~3k out ≈ **$0.016 on Haiku**. A chat turn is well under $0.01. Cataloguing a closet piece ≈ **$0.003** (one small vision call, once per garment, ever); a "Dress me" ≈ $0.002. The closet catalogue itself costs $0 to store — it's in her browser.
 
 ## Deploy on Railway
 
