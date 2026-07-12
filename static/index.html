@@ -48,6 +48,8 @@
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-cam" viewBox="0 0 24 24"><rect x="3.5" y="7" width="17" height="12.5" rx="2.5"/><path d="M9 7l1.3-2.2h3.4L15 7"/><circle cx="12" cy="13" r="3.2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v10M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
+  <symbol id="i-wand" viewBox="0 0 24 24"><path d="M5 19L15.5 8.5M13 6l1-2.5L15 6l2.5 1L15 8l-1 2.5L13 8l-2.5-1L13 6Z"/><path d="M19 13l.6-1.5.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6Z"/></symbol>
 </svg>
 
 <header class="topbar">
@@ -220,6 +222,16 @@
         <span>Anything else? <small>(fit, sizes, colors you avoid…)</small></span>
         <input type="text" id="notesInput" class="text-input" placeholder="e.g. petite, size M, prefer sleeves, no bodycon" maxlength="180">
       </label>
+      <div class="field" id="selfieField" hidden>
+        <span>My photo <small>(for the fitting room — stays on this device)</small></span>
+        <div class="selfie-row">
+          <img id="selfieThumb" class="selfie-thumb" alt="Your photo" hidden>
+          <button type="button" id="selfieAdd" class="pill">Add my photo</button>
+          <button type="button" id="selfieRemove" class="pill" hidden>Remove</button>
+        </div>
+        <input type="file" id="selfieInput" accept="image/*" hidden>
+        <p class="selfie-note">Best results: front-facing, good light, plain background. Sent only at the moment you tap "Try on" to render your image — never stored on our servers.</p>
+      </div>
       <div class="trust-box">
         <svg class="icon"><use href="#i-lock"/></svg>
         <span><b>Private by design.</b> Your profile, taste and saved looks live only on this device — no account, no selfie, no tracking.
@@ -227,6 +239,21 @@
       </div>
       <button type="submit" class="primary-btn">Build my feed</button>
     </form>
+  </div>
+</div>
+
+<!-- ============ FITTING ROOM ============ -->
+<div id="tryonModal" class="modal" hidden>
+  <div class="modal-card tryon-card">
+    <button type="button" id="tryonClose" class="modal-close" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    <p class="empty-kicker">Fitting room</p>
+    <h2 id="tryonTitle">Draping it <em>on you…</em></h2>
+    <div id="tryonBody" class="tryon-body"></div>
+    <div class="sheet-actions" id="tryonActions" hidden>
+      <a id="tryonDownload" class="sheet-save" target="_blank" rel="noopener" download><svg class="icon"><use href="#i-download"/></svg><span>Save image</span></a>
+      <button type="button" id="tryonShop" class="sheet-refine"><svg class="icon"><use href="#i-out"/></svg><span>Shop this piece</span></button>
+    </div>
+    <p id="tryonRemaining" class="fineprint" hidden></p>
   </div>
 </div>
 

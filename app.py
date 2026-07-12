@@ -34,6 +34,12 @@ from fastapi.staticfiles import StaticFiles
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5")
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "2048"))
 RATE_LIMIT_PER_HOUR = int(os.environ.get("RATE_LIMIT_PER_HOUR", "40"))
+
+# --- virtual try-on (optional; off unless FAL_KEY is set) ---
+FAL_KEY = os.environ.get("FAL_KEY", "")
+VTON_PROVIDER = os.environ.get("VTON_PROVIDER", "kolors")   # kolors | fashn
+VTON_BASE = os.environ.get("VTON_BASE_URL", "https://fal.run")
+VTON_DAILY_LIMIT = int(os.environ.get("VTON_DAILY_LIMIT", "10"))
 HISTORY_LIMIT = 24          # most-recent messages kept per request
 MAX_MESSAGE_CHARS = 4000    # per-message input cap
 
@@ -48,7 +54,7 @@ MAX_BODY_BYTES = 6_500_000  # ~4MB base64 image + headroom
 
 CSP = (
     "default-src 'self'; "
-    "img-src 'self' data: https://image.pollinations.ai; "
+    "img-src 'self' data: https://image.pollinations.ai https://fal.media https://*.fal.media; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src https://fonts.gstatic.com; "
     "connect-src 'self' https://api.open-meteo.com; "
@@ -667,6 +673,105 @@ def service_worker():
 @app.get("/robots.txt")
 def robots():
     return PlainTextResponse("User-agent: *\nAllow: /\n")
+
+
+# ---------------------------------------------------------------------------
+# Virtual try-on — provider-agnostic adapter over fal.ai-hosted models.
+# Kolors (Kuaishou) is the default at ~$0.07/render; FASHN is a config swap.
+# The selfie lives in the user's browser and transits here only for the
+# render call — it is never written to disk or logged.
+# ---------------------------------------------------------------------------
+
+VTON_MODELS = {
+    "kolors": {
+        "path": "fal-ai/kling/v1-5/kolors-virtual-try-on",
+        "payload": lambda person, garment: {
+            "human_image_url": person, "garment_image_url": garment},
+    },
+    "fashn": {
+        "path": "fal-ai/fashn/tryon/v1.5",
+        "payload": lambda person, garment: {
+            "model_image": person, "garment_image": garment, "category": "auto"},
+    },
+}
+
+_vton_hits: dict[str, deque] = defaultdict(deque)
+
+
+def vton_allow(ip: str) -> tuple[bool, int]:
+    now = time.time()
+    q = _vton_hits[ip]
+    while q and now - q[0] > 86400:
+        q.popleft()
+    if len(q) >= VTON_DAILY_LIMIT:
+        return False, 0
+    q.append(now)
+    return True, VTON_DAILY_LIMIT - len(q)
+
+
+async def call_vton(person_uri: str, garment_uri: str) -> str:
+    """Returns the rendered image URL. Raises httpx errors / ValueError."""
+    model = VTON_MODELS.get(VTON_PROVIDER) or VTON_MODELS["kolors"]
+    async with httpx.AsyncClient(timeout=150) as hc:
+        r = await hc.post(
+            f"{VTON_BASE}/{model['path']}",
+            headers={"Authorization": f"Key {FAL_KEY}"},
+            json=model["payload"](person_uri, garment_uri),
+        )
+    r.raise_for_status()
+    data = r.json()
+    url = (data.get("image") or {}).get("url") if isinstance(data.get("image"), dict) else None
+    if not url:
+        images = data.get("images") or []
+        url = images[0].get("url") if images and isinstance(images[0], dict) else None
+    if not url:
+        raise ValueError("no image in provider response")
+    return url
+
+
+@app.get("/api/config")
+async def api_config():
+    return {"tryon": bool(FAL_KEY), "tryon_limit": VTON_DAILY_LIMIT}
+
+
+@app.post("/api/tryon")
+async def tryon(request: Request):
+    if not FAL_KEY:
+        return JSONResponse({"error": "Try-on isn't enabled on this server."},
+                            status_code=503)
+
+    body = await read_json_object(request)
+    person = body.get("person")
+    if not (isinstance(person, dict)
+            and person.get("media_type") in ("image/jpeg", "image/png", "image/webp")
+            and isinstance(person.get("data"), str)
+            and 0 < len(person["data"]) <= 4_000_000):
+        return JSONResponse({"error": "Add your photo first."}, status_code=400)
+
+    garment_url = body.get("garment_url")
+    if not (isinstance(garment_url, str) and garment_url.startswith("https://")
+            and len(garment_url) < 2000):
+        return JSONResponse({"error": "No garment to try."}, status_code=400)
+
+    # quota is charged only for valid render attempts
+    ok, remaining = vton_allow(client_ip(request))
+    if not ok:
+        return JSONResponse(
+            {"error": f"You've used today's {VTON_DAILY_LIMIT} try-ons — more tomorrow."},
+            status_code=429)
+
+    person_uri = f"data:{person['media_type']};base64,{person['data']}"
+    try:
+        url = await call_vton(person_uri, garment_url)
+        return JSONResponse({"image_url": url, "remaining": remaining})
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        msg = ("The try-on service declined this image — try a clearer, front-facing photo."
+               if code in (400, 422) else "The fitting room is busy — try again in a minute.")
+        return JSONResponse({"error": msg}, status_code=502)
+    except (httpx.HTTPError, ValueError):
+        return JSONResponse({"error": "Couldn't reach the fitting room — try again."},
+                            status_code=502)
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

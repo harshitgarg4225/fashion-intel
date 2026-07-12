@@ -63,6 +63,12 @@ The daily feed is **one model call per user per day** (cached client-side; refre
 | `CLAUDE_MODEL` | `claude-haiku-4-5` | Set `claude-sonnet-5` or `claude-opus-4-8` for noticeably better styling judgment at ~3–5× the token price. |
 | `MAX_TOKENS` | `2048` | Per-reply output cap. |
 | `RATE_LIMIT_PER_HOUR` | `40` | Per-IP request cap. |
+| `FAL_KEY` | *(unset — try-on off)* | [fal.ai](https://fal.ai) key. Setting it turns on the **Fitting Room** (virtual try-on): "Try on" buttons appear on clothing pieces in every look sheet. ~$0.07/render on the default provider. |
+| `VTON_PROVIDER` | `kolors` | `kolors` (Kuaishou's Kolors — cheapest) or `fashn` (best garment fidelity). One env var to swap. |
+| `VTON_DAILY_LIMIT` | `10` | Per-user daily try-on cap — the cost governor. 10 renders ≈ $0.70/user/day worst case. |
+| `VTON_BASE_URL` | `https://fal.run` | Override for testing against a local double. |
+
+**Fitting-room privacy:** her photo is stored in the browser only (removable anytime), transits the server solely at the moment of a render call, is never written to disk or logged, and the UI says exactly that. Invalid requests don't consume quota.
 
 ## Production posture
 

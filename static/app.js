@@ -16,6 +16,8 @@ let messages = store.get("sty_messages", []);   // [{role, content}]
 let saved = store.get("sty_saved", []);          // [look]
 let taste = store.get("sty_taste", { loved: [], less: [] });
 let events = store.get("sty_events", []);        // [{occasion, date, vibe, note}]
+let tryonEnabled = false;                        // set from /api/config
+const CLOTHING = new Set(["top", "bottom", "dress", "outerwear"]);
 let streaming = false;
 let abortCtrl = null;
 let feedLoading = false;
@@ -502,7 +504,9 @@ function openSheet(look) {
   const seed = hashSeed(look.title + todayKey());
   const items = (look.items || []).map((item, i) => {
     const q = item.search || item.name || "";
-    const links = retailersFor().map(([name, fn], j) =>
+    const tryBtn = tryonEnabled && CLOTHING.has(item.category)
+      ? `<button class="try-btn" data-try="${i}">${icon("i-wand", "icon sm")}Try on</button>` : "";
+    const links = tryBtn + retailersFor().map(([name, fn], j) =>
       `<a class="shop-link${j === 0 ? " primary" : ""}" href="${esc(fn(q))}" target="_blank" rel="noopener">${name}${icon("i-out", "icon sm")}</a>`
     ).join("");
     const thumb = item.image_prompt
@@ -574,6 +578,9 @@ function openSheet(look) {
   if (closeBtn) closeBtn.focus({ preventScroll: true });
   $("sheetBody").querySelectorAll("[data-rail]").forEach(b => {
     b.onclick = () => openSheet(collectionToLook(others[+b.dataset.rail]));
+  });
+  $("sheetBody").querySelectorAll("[data-try]").forEach(b => {
+    b.onclick = () => tryOn((look.items || [])[+b.dataset.try], look);
   });
 
   $("sheetSave").onclick = e => {
@@ -1070,6 +1077,7 @@ function openModal() {
   modal.hidden = false;
   // First run must complete the quiz; returning users can dismiss.
   $("modalClose").hidden = !profile;
+  refreshSelfieUI();
   // Smart defaults on first run — one tap to a working feed.
   const defaults = profile ? null
     : { gender: "womenswear", region: "India", budget: "mid-range, quality basics", dresscode: "business casual" };
@@ -1124,6 +1132,94 @@ $("profileForm").addEventListener("submit", e => {
   renderDrops();
   loadFeed(true);           // profile changed → fresh feed
 });
+
+// ---------- fitting room (virtual try-on) ----------
+const tryonModal = $("tryonModal");
+
+function closeTryon() { tryonModal.hidden = true; }
+$("tryonClose").onclick = closeTryon;
+tryonModal.addEventListener("click", e => { if (e.target === tryonModal) closeTryon(); });
+
+async function tryOn(item, look) {
+  if (!tryonEnabled || !item) return;
+  const selfie = store.get("sty_selfie", null);
+  if (!selfie) {
+    closeSheet();
+    openModal();
+    toast("Add your photo first — it stays on this device");
+    return;
+  }
+
+  closeSheet();
+  tryonModal.hidden = false;
+  $("tryonTitle").innerHTML = `Draping it <em>on you…</em>`;
+  $("tryonActions").hidden = true;
+  $("tryonRemaining").hidden = true;
+  $("tryonBody").innerHTML = `<div class="tryon-stage">
+    <div class="tryon-wait">${esc(item.name)}<br>Usually 15–30 seconds — worth it.</div>
+  </div>`;
+
+  const garment_url = thumbURL(
+    item.image_prompt || `studio product photograph of ${item.name}`,
+    hashSeed(item.name || "piece"));
+
+  try {
+    const res = await fetch("/api/tryon", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        person: { media_type: selfie.media_type, data: selfie.data },
+        garment_url,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Try-on failed.");
+
+    $("tryonTitle").innerHTML = `${esc(item.name)} — <em>on you.</em>`;
+    $("tryonBody").innerHTML = `<div class="tryon-stage">
+      <img src="${esc(data.image_url)}" alt="You wearing ${esc(item.name)}"></div>`;
+    $("tryonDownload").href = data.image_url;
+    $("tryonShop").onclick = () => {
+      const [, fn] = retailersFor()[0];
+      window.open(fn(item.search || item.name), "_blank", "noopener");
+    };
+    $("tryonActions").hidden = false;
+    if (typeof data.remaining === "number") {
+      $("tryonRemaining").textContent = `${data.remaining} try-on${data.remaining === 1 ? "" : "s"} left today · AI render — drape and fit are indicative`;
+      $("tryonRemaining").hidden = false;
+    }
+  } catch (err) {
+    $("tryonTitle").innerHTML = `The fitting room <em>hiccuped</em>`;
+    $("tryonBody").innerHTML = `<p class="tryon-err">${esc(err.message || "Try again in a minute.")}</p>`;
+  }
+}
+
+// selfie management (on-device only)
+function refreshSelfieUI() {
+  const s = store.get("sty_selfie", null);
+  $("selfieField").hidden = !tryonEnabled;
+  $("selfieThumb").hidden = !s;
+  if (s) $("selfieThumb").src = s.thumb;
+  $("selfieAdd").textContent = s ? "Replace photo" : "Add my photo";
+  $("selfieRemove").hidden = !s;
+}
+$("selfieAdd").onclick = () => $("selfieInput").click();
+$("selfieInput").onchange = async () => {
+  const f = $("selfieInput").files[0];
+  $("selfieInput").value = "";
+  if (!f || !f.type.startsWith("image/")) return;
+  try {
+    const img = await prepareImage(f);
+    store.set("sty_selfie", img);
+    refreshSelfieUI();
+    toast("Photo saved on this device — fitting room open");
+  } catch { toast("Couldn't read that photo — try another"); }
+};
+$("selfieRemove").onclick = () => {
+  localStorage.removeItem("sty_selfie");
+  refreshSelfieUI();
+  toast("Photo removed");
+};
 
 // ---------- occasion studio wiring ----------
 const eventModal = $("eventModal");
@@ -1211,4 +1307,10 @@ else loadFeed(false);
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
+
+// feature flags from the server (try-on appears only when configured)
+fetch("/api/config").then(r => r.json()).then(cfg => {
+  tryonEnabled = !!cfg.tryon;
+  refreshSelfieUI();
+}).catch(() => {});
 })();
