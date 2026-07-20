@@ -103,6 +103,69 @@ function ReviewEditor({ job, stage, draft, setDraft, regenPrompt, setRegenPrompt
   );
 }
 
+const KEY_FIELDS = [
+  ["OPENAI_API_KEY", "OpenAI API key", "required for gpt-image rendering (and the default stylist)"],
+  ["ANTHROPIC_API_KEY", "Anthropic API key", "optional — run the stylist on Claude"],
+  ["GEMINI_API_KEY", "Gemini API key", "optional — alternative image renderer (WARDROBE_IMAGE_PROVIDER=gemini)"],
+  ["GOOGLE_CLIENT_ID", "Google OAuth client ID", "optional — Google Photos import"],
+  ["GOOGLE_CLIENT_SECRET", "Google OAuth client secret", "optional — Google Photos import"],
+];
+
+function KeysPanel({ onSaved }) {
+  const [values, setValues] = useState({});
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api("/api/setup/keys").then(setStatus).catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("/api/setup/keys", { method: "PUT", body: JSON.stringify(values) });
+      setStatus(result);
+      setValues({});
+      onSaved(await api(CONFIG_API));
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="keys-panel">
+      <h3>Add your API keys</h3>
+      <p className="import-card__detail">Stored locally in <code>data/settings.json</code> (0600, never in Git). Environment variables always take precedence — on Railway, prefer setting these as service variables.</p>
+      {KEY_FIELDS.map(([name, label, hint]) => {
+        const present = status?.env?.[name] || status?.stored?.[name];
+        return (
+          <div className="import-field" key={name}>
+            <label htmlFor={`key-${name}`}>{label} <span>{present ? (status?.env?.[name] ? "set via environment" : "saved") : hint}</span></label>
+            <input
+              id={`key-${name}`}
+              type="password"
+              autoComplete="off"
+              value={values[name] || ""}
+              placeholder={present ? "••••••••  (enter a new value to replace)" : ""}
+              onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))}
+            />
+          </div>
+        );
+      })}
+      <div className="import-actions">
+        <button className="import-button import-button--primary" type="button" disabled={busy || !Object.values(values).some((value) => value.trim())} onClick={save}>
+          {busy ? <SpinnerGap size={14} className="import-spinner" /> : <Check size={14} weight="bold" />} Save keys
+        </button>
+      </div>
+      {error && <p className="import-status is-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function ReferenceCapture({ setup, onDone }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -490,7 +553,7 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved }) {
               {setup?.faceFilter && <p className="import-sources-note">Face filter is on: only clothes worn by you (or shown unworn) enter your closet. Photos of other people are skipped.</p>}
             </div>
           )}
-          {!jobs.length ? setupRequired ? <div className="import-drop-target import-setup-warning"><WarningCircle size={30} /><h2>Setup required</h2>{setup?.hasModelReference ? <p>Add your OpenAI API key to <code>.env</code>, then restart the app. Your reference photo is already in place.</p> : <ReferenceCapture setup={setup} onDone={setSetup} />}</div> : <div className="import-drop-target"><UploadSimple size={28} /><h2>{notice ? "Try another image" : "Choose or paste an image"}</h2><p>{notice?.detail || "We’ll isolate each clothing item, suggest its details, and hold everything for your approval."}</p><button className="import-button import-button--primary" disabled={!setup?.ready} onClick={() => { setNotice(null); inputRef.current?.click(); }}>Choose images</button></div> : (
+          {!jobs.length ? setupRequired ? <div className="import-drop-target import-setup-warning"><WarningCircle size={30} /><h2>Finish setting up</h2>{!setup?.hasApiKey && <KeysPanel onSaved={setSetup} />}{!setup?.hasModelReference && <ReferenceCapture setup={setup} onDone={setSetup} />}</div> : <div className="import-drop-target"><UploadSimple size={28} /><h2>{notice ? "Try another image" : "Choose or paste an image"}</h2><p>{notice?.detail || "We’ll isolate each clothing item, suggest its details, and hold everything for your approval."}</p><button className="import-button import-button--primary" disabled={!setup?.ready} onClick={() => { setNotice(null); inputRef.current?.click(); }}>Choose images</button></div> : (
             <>
               <div className={`import-progress${activeStatus?.tone !== "processing" ? " is-reviewing" : progress < 100 ? " is-indeterminate" : ""}`}><div className="import-progress__meta"><span>{activeStatus?.text}</span><span>{jobs.length} {jobs.length === 1 ? "item" : "items"}</span></div>{activeStatus?.tone === "processing" && <div className="import-progress__track"><div className="import-progress__bar" style={{ "--import-progress": `${progress}%` }} /></div>}</div>
               {reviewJob && reviewStage ? <ReviewEditor job={reviewJob} stage={reviewStage} draft={drafts[reviewJob.id] || defaultDraft(reviewJob)} setDraft={(draft) => setDrafts((current) => ({ ...current, [reviewJob.id]: draft }))} regenPrompt={regenerationPrompts[`${reviewJob.id}:${reviewStage}`] || ""} setRegenPrompt={(prompt) => setRegenerationPrompts((current) => ({ ...current, [`${reviewJob.id}:${reviewStage}`]: prompt }))} busy={busyId === reviewJob.id} onAction={(action, prompt) => perform(reviewJob, reviewStage, action, prompt)} /> : reviewJob && hasCleanupFailure(reviewJob) ? <CleanupEditor job={reviewJob} tolerance={cleanupTolerances[reviewJob.id] ?? reviewJob.stages.garment.cleanupTolerance ?? 46} setTolerance={(tolerance) => setCleanupTolerances((current) => ({ ...current, [reviewJob.id]: tolerance }))} busy={busyId === reviewJob.id} onPreview={(tolerance) => performCleanup(reviewJob, "preview", tolerance)} onAccept={() => performCleanup(reviewJob, "accept")} /> : null}

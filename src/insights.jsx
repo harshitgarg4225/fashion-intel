@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { SpinnerGap } from "@phosphor-icons/react";
 import { OptimizedImage } from "./OptimizedImage.jsx";
 import "./insights.css";
 
@@ -9,6 +10,67 @@ const TYPE_LABELS = [
   ["accessories_up", "Accessories"],
   ["shoes", "Shoes"],
 ];
+
+function CapsulePlanner({ items }) {
+  const [days, setDays] = useState("");
+  const [destination, setDestination] = useState("");
+  const [notes, setNotes] = useState("");
+  const [plan, setPlan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    setPlan(null);
+    try {
+      const response = await fetch("/api/capsule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: Number(days), destination, notes }),
+      });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.error || "Could not plan the capsule.");
+      setPlan(value);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="insight-block capsule-planner">
+      <h3>Pack for a trip</h3>
+      <div className="capsule-form">
+        <input type="number" min="1" max="21" value={days} placeholder="Days" aria-label="Trip length in days" onChange={(event) => setDays(event.target.value)} />
+        <input value={destination} placeholder="Destination (optional)" aria-label="Destination" onChange={(event) => setDestination(event.target.value)} />
+        <input value={notes} placeholder="Notes, e.g. beach + two dinners" aria-label="Trip notes" onChange={(event) => setNotes(event.target.value)} />
+        <button type="button" disabled={busy || !Number(days)} onClick={submit}>{busy ? <SpinnerGap className="capsule-spin" size={14} /> : "Plan capsule"}</button>
+      </div>
+      {error && <p className="status error">{error}</p>}
+      {plan && (
+        <div className="capsule-result">
+          <p className="capsule-rationale">{plan.rationale}</p>
+          <div className="outfit-garments" aria-label="Capsule pieces">
+            {plan.pieceIds.map((id) => {
+              const item = itemsById.get(id);
+              return item ? (
+                <span className="outfit-garment" key={id} title={item.name}>
+                  <OptimizedImage src={item.thumbnail || item.image} alt={item.name} sizes="44px" breakpoints={[44, 88]} />
+                </span>
+              ) : null;
+            })}
+          </div>
+          <ol className="capsule-days">
+            {plan.dayPlans.map((entry) => <li key={entry.day}>{entry.description}</li>)}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Insights({ items }) {
   const [outfits, setOutfits] = useState([]);
@@ -140,6 +202,8 @@ export function Insights({ items }) {
           )}
         </div>
       </div>
+
+      <CapsulePlanner items={items} />
     </section>
   );
 }

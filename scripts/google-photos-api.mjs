@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { makeSetting } from "./settings-store.mjs";
 
 const API_ROOT = "/api/google";
 const SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly";
@@ -19,14 +20,39 @@ export function googlePhotosApi(options = {}) {
   let tokenFile;
   const bridge = options.bridge || {};
   const pendingStates = new Set();
-  const setting = (name, fallback = "") => options.env?.[name] || process.env[name] || fallback;
+  const setting = makeSetting(options);
+
+  // Tokens are encrypted at rest when a passphrase is configured.
+  function tokenKey() {
+    const passphrase = (options.env?.WARDROBE_PASSPHRASE || process.env.WARDROBE_PASSPHRASE || "").trim();
+    return passphrase ? scryptSync(passphrase, "fashion-intel-token-v1", 32) : null;
+  }
+
+  function sealToken(record) {
+    const key = tokenKey();
+    if (!key) return JSON.stringify(record, null, 2);
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", key, iv);
+    const encrypted = Buffer.concat([cipher.update(JSON.stringify(record), "utf8"), cipher.final()]);
+    return JSON.stringify({ enc: "aes-256-gcm", iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: encrypted.toString("base64") });
+  }
+
+  function openToken(raw) {
+    const parsed = JSON.parse(raw);
+    if (parsed?.enc !== "aes-256-gcm") return parsed;
+    const key = tokenKey();
+    if (!key) throw new Error("Stored Google token is encrypted; WARDROBE_PASSPHRASE is required to read it.");
+    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(parsed.iv, "base64"));
+    decipher.setAuthTag(Buffer.from(parsed.tag, "base64"));
+    return JSON.parse(Buffer.concat([decipher.update(Buffer.from(parsed.data, "base64")), decipher.final()]).toString("utf8"));
+  }
   const authBase = () => setting("GOOGLE_OAUTH_BASE_URL", "https://accounts.google.com/o/oauth2/v2/auth");
   const tokenUrl = () => setting("GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token");
   const pickerBase = () => setting("GOOGLE_PICKER_BASE_URL", "https://photospicker.googleapis.com/v1").replace(/\/$/, "");
   const configured = () => Boolean(setting("GOOGLE_CLIENT_ID").trim() && setting("GOOGLE_CLIENT_SECRET").trim());
 
   async function loadToken() {
-    try { return JSON.parse(await readFile(tokenFile, "utf8")); }
+    try { return openToken(await readFile(tokenFile, "utf8")); }
     catch (error) { if (error.code === "ENOENT") return null; throw error; }
   }
 
@@ -37,7 +63,7 @@ export function googlePhotosApi(options = {}) {
       expires_at: Date.now() + (Math.max(60, Number(payload.expires_in) || 3600) - 30) * 1000,
     };
     await mkdir(path.dirname(tokenFile), { recursive: true });
-    await writeFile(tokenFile, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+    await writeFile(tokenFile, `${sealToken(record)}\n`, { mode: 0o600 });
     return record;
   }
 
@@ -74,7 +100,8 @@ export function googlePhotosApi(options = {}) {
 
   function redirectUri(req) {
     const host = req.headers.host || "localhost:5173";
-    return `http://${host}${API_ROOT}/callback`;
+    const proto = (req.headers["x-forwarded-proto"] || "").includes("https") ? "https" : "http";
+    return `${proto}://${host}${API_ROOT}/callback`;
   }
 
   async function handler(req, res, next) {

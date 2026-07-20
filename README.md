@@ -20,6 +20,10 @@ Fashion Intel turns photos of your clothes into an organized digital closet, the
 
 Everything stays local: originals, cutouts, renders, outfits, and the JSON database live in `data/` on your machine. See [ROADMAP.md](ROADMAP.md) for the full product plan.
 
+## Deploy it (Railway)
+
+The app ships production-ready for Railway: `railway.json` is included, the server binds Railway's `PORT` automatically, `/data` volume support keeps your closet across deploys, and `WARDROBE_PASSPHRASE` gates the whole API behind a login (required for any public deployment — it also encrypts the Google token at rest). The complete checklist — including provisioning every third-party API key — is in **[DEPLOY.md](DEPLOY.md)**.
+
 ## Quick start
 
 ```bash
@@ -84,6 +88,11 @@ Every generation step is reviewable: approve, reject, or regenerate with a corre
 | `WARDROBE_HOST` | `127.0.0.1` | Set `0.0.0.0` to expose on your LAN (trusted networks only) |
 | `WARDROBE_DAILY_BUDGET` | off | Hard-stop image generation past this estimated daily spend (USD) |
 | `WARDROBE_VISUAL_STYLIST` | `auto` | Send garment thumbnails to the stylist: `auto` (≤20 pieces), `on`, `off` |
+| `WARDROBE_PASSPHRASE` | off | Gates every /api route behind a login; required for public deploys |
+| `WARDROBE_IMAGE_PROVIDER` | `openai` | `gemini` renders all images with Gemini (`GEMINI_API_KEY`) |
+| `WARDROBE_HEMISPHERE` | `north` | Season logic for the stylist and capsule planner |
+
+API keys can also be entered in the app (import tray → setup) and are stored in `data/settings.json`; environment variables always win.
 
 ## Security posture
 

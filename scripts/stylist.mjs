@@ -79,12 +79,13 @@ Curate exactly one outfit:
 - Give the outfit a short evocative name, 1-3 lowercase occasion labels (e.g. smart-casual, weekend, office), one sentence explaining why the combination works, and a restrained real-world photo setting description (e.g. "a quiet warm-stone courtyard with restrained greenery").`;
 }
 
-export async function curateOutfit({ setting, items, direction, mood, usedCombinations = [], feedback = [], profile = null, itemImages = [], inspirationImage = null }) {
+export async function curateOutfit({ setting, items, direction, mood, usedCombinations = [], feedback = [], profile = null, itemImages = [], inspirationImage = null, extraInstruction = null }) {
   const images = [...itemImages];
   if (inspirationImage) images.push(inspirationImage);
+  const basePrompt = buildCurationPrompt({ items, direction, mood, usedCombinations, feedback, profile, hasItemImages: itemImages.length > 0, hasInspiration: Boolean(inspirationImage) });
   const result = await structuredAnalysis({
     setting,
-    prompt: buildCurationPrompt({ items, direction, mood, usedCombinations, feedback, profile, hasItemImages: itemImages.length > 0, hasInspiration: Boolean(inspirationImage) }),
+    prompt: extraInstruction ? `${basePrompt}\n\n${extraInstruction}` : basePrompt,
     images,
     schema: CURATION_SCHEMA,
     schemaName: "curated_outfit",
@@ -115,6 +116,45 @@ export async function curateOutfit({ setting, items, direction, mood, usedCombin
     outer,
     shoes,
     accessory,
+  };
+}
+
+const CAPSULE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    pieceIds: { type: "array", items: { type: "string" }, maxItems: 20 },
+    rationale: { type: "string" },
+    dayPlans: {
+      type: "array",
+      maxItems: 21,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: { day: { type: "integer" }, description: { type: "string" } },
+        required: ["day", "description"],
+      },
+    },
+  },
+  required: ["pieceIds", "rationale", "dayPlans"],
+};
+
+export async function planCapsule({ setting, items, days, destination, notes }) {
+  const inventory = items.map(describeItem).join("\n");
+  const prompt = `You are packing a travel capsule wardrobe from a real closet.
+
+Wardrobe inventory (each line is one garment):
+${inventory}
+
+Trip: ${days} day${days === 1 ? "" : "s"}${destination ? ` in ${destination}` : ""}.${notes ? ` Notes from the traveler: ${notes}` : ""}
+
+Select the smallest set of pieces (use only ids from the inventory) that covers every day with re-wearable, mixable combinations. Favor pieces that pair with many others; include one layer if useful. Explain the capsule logic in one short paragraph, and give a one-line outfit description for each day using only selected pieces.`;
+  const result = await structuredAnalysis({ setting, prompt, schema: CAPSULE_SCHEMA, schemaName: "capsule_plan" });
+  const validIds = new Set(items.map((item) => item.id));
+  return {
+    pieceIds: (result.pieceIds || []).filter((id) => validIds.has(id)),
+    rationale: String(result.rationale || "").slice(0, 800),
+    dayPlans: (result.dayPlans || []).slice(0, days).map((plan) => ({ day: Number(plan.day) || 0, description: String(plan.description || "").slice(0, 300) })),
   };
 }
 

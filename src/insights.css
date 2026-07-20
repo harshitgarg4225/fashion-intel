@@ -154,3 +154,62 @@
   .insights { padding: 32px 24px 96px; }
   .insight-columns { grid-template-columns: 1fr; }
 }
+
+/* Capsule planner */
+
+.capsule-planner { margin-top: 40px; }
+
+.capsule-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.capsule-form input {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.capsule-form input[type="number"] { width: 84px; }
+
+.capsule-form input:not([type="number"]) { flex: 1 1 180px; min-width: 0; }
+
+.capsule-form button {
+  border: 1px solid var(--ink);
+  padding: 10px 18px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.capsule-form button:disabled { opacity: .5; cursor: default; }
+
+.capsule-spin { animation: capsule-spin 900ms linear infinite; }
+
+@keyframes capsule-spin { to { transform: rotate(360deg); } }
+
+.capsule-result { margin-top: 18px; display: flex; flex-direction: column; gap: 14px; }
+
+.capsule-rationale { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink); }
+
+.capsule-result .outfit-garments { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.capsule-result .outfit-garment {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .6);
+}
+
+.capsule-result .outfit-garment img { width: 100%; height: 100%; object-fit: contain; }
+
+.capsule-days { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: var(--muted); }

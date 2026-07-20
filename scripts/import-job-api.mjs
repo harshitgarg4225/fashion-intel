@@ -4,6 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { structuredAnalysis } from "./ai-providers.mjs";
 import { audit, checkImageBudget, initTelemetry, recordUsage } from "./telemetry.mjs";
+import { initSettingsStore, makeSetting, saveStoredSettings, storedKeyStatus, STORABLE_KEYS } from "./settings-store.mjs";
 
 const API_ROOT = "/api/import/jobs";
 const ASSET_ROOT = "/api/import/assets";
@@ -80,7 +81,11 @@ function normalizeBoundingBox(value = {}) {
 }
 
 async function normalizeImage(bytes) {
-  return sharp(bytes).rotate().toColorspace("srgb").png().toBuffer();
+  try {
+    return await sharp(bytes).rotate().toColorspace("srgb").png().toBuffer();
+  } catch (error) {
+    throw new Error(`Could not decode that image (${error.message}). If it is a HEIC photo, export or convert it to JPEG/PNG first.`);
+  }
 }
 
 async function cropDetectedItem(bytes, boundingBox) {
@@ -319,9 +324,64 @@ export async function openAIEdit({ key, baseUrl, model, prompt, images, size, ba
   if (!response.ok) throw new Error(result.error?.message || `OpenAI image request failed (${response.status})`);
   const encoded = result.data?.[0]?.b64_json;
   if (!encoded) throw new Error("OpenAI response did not contain image data");
-  void audit({ type: "image", model, size });
+  void audit({ type: "image", provider: "openai", model, size });
   void recordUsage("image");
   return Buffer.from(encoded, "base64");
+}
+
+async function geminiEdit({ key, baseUrl, model, prompt, images, size }) {
+  const parts = [];
+  for (const image of images) {
+    const normalized = await normalizeImage(image.data);
+    parts.push({ inline_data: { mime_type: "image/png", data: normalized.toString("base64") } });
+  }
+  parts.push({ text: prompt });
+  const aspectRatio = size === "1536x1024" ? "3:2" : size === "1024x1536" ? "2:3" : "1:1";
+  const response = await fetch(`${baseUrl}/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio } },
+    }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error?.message || `Gemini image request failed (${response.status})`);
+  const inline = result.candidates?.[0]?.content?.parts?.find((part) => part.inlineData || part.inline_data);
+  const encoded = (inline?.inlineData || inline?.inline_data)?.data;
+  if (!encoded) throw new Error("Gemini response did not contain image data");
+  void audit({ type: "image", provider: "gemini", model, size });
+  void recordUsage("image");
+  return Buffer.from(encoded, "base64");
+}
+
+// Dispatches to the configured image provider. gpt-image is the default;
+// set WARDROBE_IMAGE_PROVIDER=gemini plus GEMINI_API_KEY to switch.
+export async function imageEdit({ setting, modelSetting, prompt, images, size, background }) {
+  if (setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase() === "gemini") {
+    const key = setting("GEMINI_API_KEY").trim();
+    if (!key) throw new Error("GEMINI_API_KEY is not configured");
+    return geminiEdit({
+      key,
+      baseUrl: setting("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, ""),
+      model: setting("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
+      prompt,
+      images,
+      size,
+    });
+  }
+  const key = setting("OPENAI_API_KEY").trim();
+  if (!key) throw new Error("OPENAI_API_KEY is not configured");
+  return openAIEdit({
+    key,
+    baseUrl: setting("OPENAI_API_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, ""),
+    model: setting(modelSetting, setting("OPENAI_IMAGE_MODEL", "gpt-image-2")),
+    quality: setting("OPENAI_IMAGE_QUALITY", "high"),
+    prompt,
+    images,
+    size,
+    background,
+  });
 }
 
 // 16 hex chars of 8x8 luminance structure + 3 hex chars of quantized mean color.
@@ -378,11 +438,11 @@ export function wardrobeImportApi(options = {}) {
   let importedFile;
   let libraryAssetDir;
   const running = new Map();
-  const setting = (name, fallback = "") => options.env?.[name] || process.env[name] || fallback;
-  const apiBaseUrl = () => setting("OPENAI_API_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, "");
+  const setting = makeSetting(options);
 
   async function setupStatus() {
-    const hasApiKey = Boolean(setting("OPENAI_API_KEY").trim());
+    const imageProvider = setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase();
+    const hasApiKey = Boolean((imageProvider === "gemini" ? setting("GEMINI_API_KEY") : setting("OPENAI_API_KEY")).trim());
     const referenceSetting = setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png");
     const referencePath = path.resolve(root, referenceSetting);
     let hasModelReference = false;
@@ -396,6 +456,7 @@ export function wardrobeImportApi(options = {}) {
       hasApiKey,
       hasModelReference,
       modelReference: referenceSetting,
+      imageProvider,
       faceFilter: setting("WARDROBE_FACE_FILTER", "on") !== "off" && hasModelReference,
     };
   }
@@ -494,6 +555,8 @@ export function wardrobeImportApi(options = {}) {
       modeledImage: modeledImage || existing?.modeledImage || null,
       price: existing?.price ?? null,
       inLaundry: existing?.inLaundry ?? false,
+      wishlist: existing?.wishlist ?? false,
+      seasons: existing?.seasons ?? [],
       hash,
       duplicateOf,
       importJobId: job.id,
@@ -516,8 +579,6 @@ export function wardrobeImportApi(options = {}) {
       try {
         const dir = path.join(jobsDir, current.id);
         const output = path.join(dir, `${stageName}-${stage.attempts}.png`);
-        const key = setting("OPENAI_API_KEY");
-        if (!key) throw new Error("OPENAI_API_KEY is not configured");
         await checkImageBudget(setting);
         const sourceFile = stageName === "garment" && current.internal.cropFile ? current.internal.cropFile : current.internal.originalFile;
         const original = { data: await readFile(path.join(dir, sourceFile)), mime: "image/png", name: sourceFile };
@@ -525,7 +586,7 @@ export function wardrobeImportApi(options = {}) {
         if (stageName === "garment") {
           chromaKeyUsed = chooseChromaKey(current.metadata.color);
           const basePrompt = options.garmentPrompt || buildGarmentPrompt(current.metadata, chromaKeyUsed);
-          bytes = await openAIEdit({ key, baseUrl: apiBaseUrl(), model: setting("OPENAI_GARMENT_MODEL", setting("OPENAI_IMAGE_MODEL", "gpt-image-2")), quality: setting("OPENAI_IMAGE_QUALITY", "high"), size: "1024x1024", images: [original], prompt: current.stages.garment.prompt ? `${basePrompt}\nUser regeneration direction: ${current.stages.garment.prompt}` : basePrompt });
+          bytes = await imageEdit({ setting, modelSetting: "OPENAI_GARMENT_MODEL", size: "1024x1024", images: [original], prompt: current.stages.garment.prompt ? `${basePrompt}\nUser regeneration direction: ${current.stages.garment.prompt}` : basePrompt });
           const rawName = `${stageName}-${stage.attempts}-source.png`;
           await writeFile(path.join(dir, rawName), bytes);
           failedAssetUrl = `${ASSET_ROOT}/${current.id}/${rawName}`;
@@ -546,7 +607,7 @@ export function wardrobeImportApi(options = {}) {
           }
           const model = { data: modelData, mime: "image/png", name: "model.png" };
           const basePrompt = options.modeledPrompt || "Create a professional horizontal 3:2 editorial fashion photograph of the person in Image 1 wearing the exact garment from Image 2. Preserve the person's recognizable identity, face, hair, age and proportions. Preserve every garment color, material, fit, construction, graphic, logo and distinctive detail. Keep the complete featured item clearly visible and unobstructed, use understated neutral supporting clothes, realistic anatomy, natural light, authentic fabric, a tasteful real-world setting, and leave environmental space around the model. No text, watermark, product mockup, or synthetic appearance.";
-          bytes = await openAIEdit({ key, baseUrl: apiBaseUrl(), model: setting("OPENAI_MODELED_MODEL", setting("OPENAI_IMAGE_MODEL", "gpt-image-2")), quality: setting("OPENAI_IMAGE_QUALITY", "high"), size: "1536x1024", images: [model, garment], prompt: current.stages.modeled.prompt ? `${basePrompt}\nUser regeneration direction: ${current.stages.modeled.prompt}` : basePrompt });
+          bytes = await imageEdit({ setting, modelSetting: "OPENAI_MODELED_MODEL", size: "1536x1024", images: [model, garment], prompt: current.stages.modeled.prompt ? `${basePrompt}\nUser regeneration direction: ${current.stages.modeled.prompt}` : basePrompt });
         }
         await writeFile(output, bytes);
         const fresh = await loadJob(current.id);
@@ -572,7 +633,7 @@ export function wardrobeImportApi(options = {}) {
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith("/api/import/") && url.pathname !== "/api/setup/reference") return next();
+    if (!url.pathname.startsWith("/api/import/") && !url.pathname.startsWith("/api/setup/")) return next();
     try {
       if (url.pathname === "/api/import/wardrobe" && req.method === "GET") {
         return json(res, 200, await loadImported());
@@ -597,11 +658,22 @@ export function wardrobeImportApi(options = {}) {
         if (input.price === null) record.price = null;
         else if (Number.isFinite(Number(input.price)) && Number(input.price) >= 0) record.price = Math.round(Number(input.price) * 100) / 100;
         if (typeof input.inLaundry === "boolean") record.inLaundry = input.inLaundry;
+        if (typeof input.wishlist === "boolean") record.wishlist = input.wishlist;
+        if (Array.isArray(input.seasons)) record.seasons = input.seasons.filter((season) => ["spring", "summer", "fall", "winter"].includes(season)).slice(0, 4);
         if (input.duplicateOf === null) record.duplicateOf = null;
         record.palette = [record.color, record.secondaryColor].filter(Boolean);
         records[index] = record;
         await atomicJson(importedFile, records);
         return json(res, 200, record);
+      }
+      if (url.pathname === "/api/setup/keys" && req.method === "GET") {
+        const env = Object.fromEntries([...STORABLE_KEYS].map((name) => [name, Boolean((options.env?.[name] || process.env[name] || "").trim())]));
+        return json(res, 200, { stored: storedKeyStatus(), env });
+      }
+      if (url.pathname === "/api/setup/keys" && req.method === "PUT") {
+        const input = await body(req);
+        await saveStoredSettings(input);
+        return json(res, 200, { stored: storedKeyStatus(), setup: await setupStatus() });
       }
       if (url.pathname === "/api/setup/reference" && req.method === "POST") {
         const input = await body(req);
@@ -644,10 +716,10 @@ export function wardrobeImportApi(options = {}) {
         const setup = await setupStatus();
         if (!setup.ready) {
           const missing = [
-            !setup.hasApiKey && "OPENAI_API_KEY in .env",
-            !setup.hasModelReference && `a PNG photo of yourself at ${setup.modelReference}`,
+            !setup.hasApiKey && "an image-generation API key (in the import tray's setup screen or .env)",
+            !setup.hasModelReference && "a reference photo of yourself",
           ].filter(Boolean).join(" and ");
-          return json(res, 503, { error: `Setup required: add ${missing}, then restart the app.` });
+          return json(res, 503, { error: `Setup required: add ${missing}.` });
         }
         const input = await body(req);
         const image = decodeImage(input);
@@ -801,6 +873,7 @@ export function wardrobeImportApi(options = {}) {
       await mkdir(jobsDir, { recursive: true });
       await mkdir(libraryAssetDir, { recursive: true });
       initTelemetry(dataDir);
+      await initSettingsStore(dataDir);
       if (options.bridge) {
         options.bridge.createJobsFromImage = createJobsFromImage;
         options.bridge.setupStatus = setupStatus;

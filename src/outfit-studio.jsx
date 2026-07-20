@@ -155,7 +155,7 @@ function VerdictControls({ outfit, onVerdict }) {
   );
 }
 
-function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite, onWear, onVerdict, onVariation }) {
+function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite, onWear, onVerdict, onVariation, onRemix }) {
   const active = ACTIVE_STATUSES.has(outfit.status);
   const garments = (outfit.garmentIds || []).map((id) => itemsById.get(id)).filter(Boolean);
   const wearCount = outfit.wornAt?.length || 0;
@@ -219,6 +219,13 @@ function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite, on
               <button type="button" className="outfit-retry" onClick={() => onVariation(outfit)}>
                 <ArrowsClockwise size={14} aria-hidden="true" /> Another take
               </button>
+              {garments.some((item) => item.part === "upperbody") && (
+                <button type="button" className="outfit-swap" onClick={() => onRemix(outfit.id, "top")}>Swap top</button>
+              )}
+              {garments.some((item) => item.part === "lowerbody") && (
+                <button type="button" className="outfit-swap" onClick={() => onRemix(outfit.id, "bottom")}>Swap bottom</button>
+              )}
+              <a className="outfit-swap" href={`/api/outfits/${outfit.id}/card.png`} target="_blank" rel="noreferrer" title="Open a shareable card of this look">Share</a>
             </>
           )}
           {outfit.status === "failed" && (
@@ -355,6 +362,16 @@ export function OutfitStudio({ items, initialMood = null }) {
     }
   };
 
+  const remixOutfit = async (id, slot) => {
+    setError("");
+    try {
+      const record = await api(`${API}/${id}/remix`, { method: "POST", body: JSON.stringify({ slot }) });
+      setOutfits((current) => [...current, record]);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
   const wearOutfit = async (id) => {
     setError("");
     try {
@@ -467,6 +484,7 @@ export function OutfitStudio({ items, initialMood = null }) {
               onWear={wearOutfit}
               onVerdict={(entry, verdict, reason) => patchOutfit(entry.id, { verdict, verdictReason: reason })}
               onVariation={(entry) => createLook({ lookMood: entry.mood, lookDirection: entry.direction || "", count: 1 })}
+              onRemix={remixOutfit}
             />
           ))}
         </div>

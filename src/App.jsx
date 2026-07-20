@@ -5,6 +5,50 @@ import { OptimizedImage } from "./OptimizedImage.jsx";
 import { OutfitStudio } from "./outfit-studio.jsx";
 import { Insights } from "./insights.jsx";
 
+function PassphraseGate() {
+  const [passphrase, setPassphrase] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passphrase }),
+      });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.error || "Could not sign in.");
+      window.location.reload();
+    } catch (requestError) {
+      setError(requestError.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="auth-gate">
+      <form onSubmit={submit}>
+        <h1>Fashion Intel</h1>
+        <p>This wardrobe is passphrase-protected.</p>
+        <input
+          type="password"
+          value={passphrase}
+          onChange={(event) => setPassphrase(event.target.value)}
+          placeholder="Passphrase"
+          aria-label="Passphrase"
+          autoFocus
+        />
+        <button type="submit" disabled={busy || !passphrase}>{busy ? "Checking…" : "Open my closet"}</button>
+        {error && <p className="status error">{error}</p>}
+      </form>
+    </div>
+  );
+}
+
 function initialViewState() {
   const params = new URLSearchParams(window.location.search);
   const view = ["outfits", "insights"].includes(params.get("view")) ? params.get("view") : params.get("feel") ? "outfits" : "closet";
@@ -180,6 +224,7 @@ function GalleryItem({ item, selected, onOpen }) {
         breakpoints={[120, 180, 240, 320, 480]}
       />
       {item.duplicateOf && <span className="item-flag dup-flag" title="Possible duplicate">dup?</span>}
+      {item.wishlist && <span className="item-flag wishlist-flag" title="Wishlist item">wish</span>}
       {item.inLaundry && <span className="item-flag laundry-flag" title="In the laundry">wash</span>}
     </button>
   );
@@ -363,6 +408,33 @@ function ItemEditor({ draft, setDraft, palette, sampling, setSampling, sampleSta
           <span>In the laundry — stylist skips it</span>
         </label>
       </div>
+
+      <div className="item-flags-row">
+        <div className="field seasons-field">
+          <span>Seasons (blank = all year)</span>
+          <div className="season-chips">
+            {["spring", "summer", "fall", "winter"].map((season) => (
+              <button
+                key={season}
+                type="button"
+                className={`season-chip${draft.seasons.includes(season) ? " active" : ""}`}
+                aria-pressed={draft.seasons.includes(season)}
+                onClick={() => setDraft((current) => ({ ...current, seasons: current.seasons.includes(season) ? current.seasons.filter((existing) => existing !== season) : [...current.seasons, season] }))}
+              >
+                {season}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="laundry-toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(draft.wishlist)}
+            onChange={(event) => setDraft((current) => ({ ...current, wishlist: event.target.checked }))}
+          />
+          <span>Wishlist — not owned yet</span>
+        </label>
+      </div>
     </div>
   );
 }
@@ -375,7 +447,7 @@ function ItemViewer({ item, onClose, onSave, onDelete, duplicateName, onDismissD
   const [sampling, setSampling] = useState(null);
   const [sampleStatus, setSampleStatus] = useState("");
   const [palette, setPalette] = useState(item.palette || []);
-  const [draft, setDraft] = useState({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry) });
+  const [draft, setDraft] = useState({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry), wishlist: Boolean(item.wishlist), seasons: [...(item.seasons || [])] });
   const [shaking, setShaking] = useState(false);
   const [closeBlocked, setCloseBlocked] = useState(false);
   const type = TYPE_MAP[item.part]?.singular || "Wardrobe item";
@@ -395,6 +467,8 @@ function ItemViewer({ item, onClose, onSave, onDelete, duplicateName, onDismissD
       tags: normalizedTags(draft.tags),
       price: draft.price ?? null,
       inLaundry: Boolean(draft.inLaundry),
+      wishlist: Boolean(draft.wishlist),
+      seasons: [...draft.seasons].sort(),
     }) !== JSON.stringify({
       name: (item.name || "").trim(),
       part: item.part,
@@ -403,6 +477,8 @@ function ItemViewer({ item, onClose, onSave, onDelete, duplicateName, onDismissD
       tags: normalizedTags(item.tags || []),
       price: item.price ?? null,
       inLaundry: Boolean(item.inLaundry),
+      wishlist: Boolean(item.wishlist),
+      seasons: [...(item.seasons || [])].sort(),
     });
   }, [draft, item]);
 
@@ -447,11 +523,11 @@ function ItemViewer({ item, onClose, onSave, onDelete, duplicateName, onDismissD
     setSampling(null);
     setSampleStatus("");
     setPalette(item.palette || []);
-    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry) });
+    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry), wishlist: Boolean(item.wishlist), seasons: [...(item.seasons || [])] });
   }, [item]);
 
   const cancelEditing = () => {
-    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry) });
+    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry), wishlist: Boolean(item.wishlist), seasons: [...(item.seasons || [])] });
     setSampling(null);
     setSampleStatus("");
     onClose();
@@ -584,10 +660,15 @@ export function App() {
   const [{ view, feel }, setViewState] = useState(initialViewState);
   const setView = (nextView) => setViewState((current) => ({ ...current, view: nextView }));
   const [query, setQuery] = useState("");
+  const [authRequired, setAuthRequired] = useState(false);
 
   useEffect(() => {
     fetch("/api/import/wardrobe", { cache: "no-store" })
       .then((response) => {
+        if (response.status === 401) {
+          setAuthRequired(true);
+          throw new Error("Sign in to see your wardrobe.");
+        }
         if (!response.ok) throw new Error("Could not load the wardrobe.");
         return response.json();
       })
@@ -654,6 +735,8 @@ export function App() {
             tags: updatedItem.tags,
             price: updatedItem.price ?? null,
             inLaundry: Boolean(updatedItem.inLaundry),
+            wishlist: Boolean(updatedItem.wishlist),
+            seasons: updatedItem.seasons || [],
           }),
         }).then((response) => { if (!response.ok) throw new Error("Could not save the item."); return response.json(); });
         setItems((current) => current.map((item) => item.id === record.id ? { ...item, ...record } : item));
@@ -704,6 +787,8 @@ export function App() {
     const id = `import-${jobId}`;
     setItems((current) => current.map((item) => item.id === id ? { ...item, modeledImage } : item));
   }, []);
+
+  if (authRequired) return <PassphraseGate />;
 
   return (
     <div className={`app-shell${selectedItem ? " has-selection" : ""}`}>

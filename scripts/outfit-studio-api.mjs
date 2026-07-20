@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { atomicJson, openAIEdit } from "./import-job-api.mjs";
-import { curateOutfit, buildOutfitImagePrompt } from "./stylist.mjs";
+import { atomicJson, imageEdit } from "./import-job-api.mjs";
+import { curateOutfit, buildOutfitImagePrompt, planCapsule } from "./stylist.mjs";
 import { resolveStylistProvider } from "./ai-providers.mjs";
 import { checkImageBudget, initTelemetry, usageToday } from "./telemetry.mjs";
+import { makeSetting } from "./settings-store.mjs";
 
 const API_ROOT = "/api/outfits";
 const IMAGE_ROOT = "/api/outfits/images";
@@ -49,8 +50,19 @@ export function outfitStudioApi(options = {}) {
   let libraryFile;
   let importedDir;
   const running = new Map();
-  const setting = (name, fallback = "") => options.env?.[name] || process.env[name] || fallback;
-  const apiBaseUrl = () => setting("OPENAI_API_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, "");
+  const setting = makeSetting(options);
+
+  function currentSeason() {
+    const month = new Date().getMonth();
+    const northern = ["winter", "winter", "spring", "spring", "spring", "summer", "summer", "summer", "fall", "fall", "fall", "winter"][month];
+    if (setting("WARDROBE_HEMISPHERE", "north").toLowerCase() !== "south") return northern;
+    return { winter: "summer", spring: "fall", summer: "winter", fall: "spring" }[northern];
+  }
+
+  function stylable(library) {
+    const season = currentSeason();
+    return library.filter((item) => !item.inLaundry && !item.wishlist && (!item.seasons?.length || item.seasons.includes(season)));
+  }
 
   async function loadOutfits() {
     try { return JSON.parse(await readFile(outfitsFile, "utf8")); }
@@ -96,9 +108,10 @@ export function outfitStudioApi(options = {}) {
   }
 
   async function setupStatus() {
-    const hasOpenAIKey = Boolean(setting("OPENAI_API_KEY").trim());
+    const imageProvider = setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase();
+    const hasOpenAIKey = Boolean((imageProvider === "gemini" ? setting("GEMINI_API_KEY") : setting("OPENAI_API_KEY")).trim());
     const provider = resolveStylistProvider(setting);
-    const hasStylistKey = provider === "anthropic" ? Boolean(setting("ANTHROPIC_API_KEY").trim()) : hasOpenAIKey;
+    const hasStylistKey = provider === "anthropic" ? Boolean(setting("ANTHROPIC_API_KEY").trim()) : Boolean(setting("OPENAI_API_KEY").trim());
     let hasModelReference = false;
     try {
       hasModelReference = (await stat(path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png")))).isFile();
@@ -147,9 +160,9 @@ export function outfitStudioApi(options = {}) {
           const usedCombinations = records
             .filter((entry) => entry.id !== id && entry.garmentIds?.length >= 2)
             .map((entry) => entry.garmentIds.slice(0, 2).map((garmentId) => byId.get(garmentId)?.name || garmentId));
-          const available = library.filter((item) => !item.inLaundry);
+          const available = stylable(library);
           if (!available.some((item) => item.part === "upperbody") || !available.some((item) => item.part === "lowerbody")) {
-            throw new Error("Not enough clean pieces: at least one top and one bottom must be out of the laundry.");
+            throw new Error("Not enough wearable pieces: at least one in-season top and bottom must be out of the laundry (wishlist items don't count).");
           }
           const feedback = records
             .filter((entry) => entry.id !== id && entry.verdict && entry.garmentIds?.length)
@@ -174,7 +187,18 @@ export function outfitStudioApi(options = {}) {
               inspirationImage = { data: await readFile(path.join(inspirationDir, `${record.id}.png`)), mime: "image/png" };
             } catch {}
           }
-          outfit = await curateOutfit({ setting, items: available, direction: record.direction, mood: record.mood, usedCombinations, feedback, profile, itemImages, inspirationImage });
+          let extraInstruction = null;
+          if (record.remix?.keepIds?.length) {
+            const keepNames = record.remix.keepIds.map((garmentId) => byId.get(garmentId)?.name || garmentId);
+            extraInstruction = `Remix constraint: keep exactly these already-chosen items in the outfit: ${keepNames.join(", ")}. Replace ONLY the ${record.remix.swapSlot} with a different ${record.remix.swapSlot} than "${byId.get(record.remix.swapId)?.name || "the previous one"}". Do not change any kept item.`;
+          }
+          outfit = await curateOutfit({ setting, items: available, direction: record.direction, mood: record.mood, usedCombinations, feedback, profile, itemImages, inspirationImage, extraInstruction });
+          if (record.remix?.keepIds?.length) {
+            const chosen = new Set([outfit.top, outfit.bottom, outfit.outer, outfit.shoes, outfit.accessory].filter(Boolean).map((item) => item.id));
+            if (!record.remix.keepIds.every((garmentId) => chosen.has(garmentId)) || chosen.has(record.remix.swapId)) {
+              throw new Error("The stylist could not produce a valid swap. Try again or generate a fresh look.");
+            }
+          }
           await updateOutfit(id, {
             name: outfit.name,
             occasion: outfit.occasion,
@@ -185,18 +209,14 @@ export function outfitStudioApi(options = {}) {
         }
 
         await updateOutfit(id, { status: "rendering", error: null });
-        const key = setting("OPENAI_API_KEY");
-        if (!key) throw new Error("OPENAI_API_KEY is not configured");
         await checkImageBudget(setting);
         const images = [await modelReference(), await garmentReference(outfit.top, "top"), await garmentReference(outfit.bottom, "bottom")];
         if (outfit.outer) images.push(await garmentReference(outfit.outer, "outer"));
         if (outfit.shoes) images.push(await garmentReference(outfit.shoes, "shoes"));
         if (outfit.accessory) images.push(await garmentReference(outfit.accessory, "accessory"));
-        const bytes = await openAIEdit({
-          key,
-          baseUrl: apiBaseUrl(),
-          model: setting("OPENAI_OUTFIT_MODEL", setting("OPENAI_IMAGE_MODEL", "gpt-image-2")),
-          quality: setting("OPENAI_IMAGE_QUALITY", "high"),
+        const bytes = await imageEdit({
+          setting,
+          modelSetting: "OPENAI_OUTFIT_MODEL",
           size: "1024x1024",
           images,
           prompt: buildOutfitImagePrompt(outfit),
@@ -215,7 +235,7 @@ export function outfitStudioApi(options = {}) {
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith(`${API_ROOT}`) && url.pathname !== "/api/profile" && url.pathname !== "/api/usage") return next();
+    if (!url.pathname.startsWith(`${API_ROOT}`) && url.pathname !== "/api/profile" && url.pathname !== "/api/usage" && url.pathname !== "/api/capsule") return next();
     try {
       if (url.pathname === "/api/profile" && req.method === "GET") {
         return json(res, 200, await loadProfile());
@@ -228,6 +248,18 @@ export function outfitStudioApi(options = {}) {
         };
         await atomicJson(profileFile, profile);
         return json(res, 200, profile);
+      }
+      if (url.pathname === "/api/capsule" && req.method === "POST") {
+        const input = await body(req);
+        const days = Math.max(1, Math.min(21, Math.round(Number(input.days) || 0)));
+        if (!Number.isFinite(Number(input.days)) || !Number(input.days)) return json(res, 400, { error: "Tell me how many days the trip is." });
+        const destination = typeof input.destination === "string" ? input.destination.trim().slice(0, 120) : "";
+        const notes = typeof input.notes === "string" ? input.notes.trim().slice(0, 400) : "";
+        const library = await loadLibrary();
+        const available = stylable(library);
+        if (available.length < 2) return json(res, 400, { error: "Import a few wearable pieces first." });
+        const plan = await planCapsule({ setting, items: available, days, destination, notes });
+        return json(res, 200, plan);
       }
       if (url.pathname === "/api/usage" && req.method === "GET") {
         const budget = Number.parseFloat(setting("WARDROBE_DAILY_BUDGET"));
@@ -295,7 +327,7 @@ export function outfitStudioApi(options = {}) {
         void generate(record.id);
         return json(res, 202, record);
       }
-      const match = url.pathname.match(/^\/api\/outfits\/([a-f0-9-]{36})(?:\/(retry|wear))?$/i);
+      const match = url.pathname.match(/^\/api\/outfits\/([a-f0-9-]{36})(?:\/(retry|wear|remix|card\.png))?$/i);
       if (!match) return json(res, 404, { error: "Not found" });
       const records = await loadOutfits();
       const record = records.find((entry) => entry.id === match[1]);
@@ -307,6 +339,74 @@ export function outfitStudioApi(options = {}) {
         const updated = await updateOutfit(record.id, { status: record.garmentIds?.length ? "rendering" : "curating", error: null });
         void generate(record.id);
         return json(res, 202, updated);
+      }
+      if (match[2] === "card.png" && req.method === "GET") {
+        if (record.status !== "ready" || !record.image) return json(res, 409, { error: "This look has no rendered photo yet." });
+        const library = await loadLibrary();
+        const byId = new Map(library.map((item) => [item.id, item]));
+        const photo = await sharp(path.join(outfitImagesDir, `${record.id}.png`)).resize(1000, 1000, { fit: "cover" }).png().toBuffer();
+        const thumbs = [];
+        for (const garmentId of (record.garmentIds || []).slice(0, 6)) {
+          const item = byId.get(garmentId);
+          if (!item) continue;
+          try {
+            thumbs.push(await sharp(await readFile(garmentFile(item))).resize(120, 120, { fit: "inside" }).png().toBuffer());
+          } catch {}
+        }
+        const escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const label = `<svg width="1080" height="1400"><style>text{font-family:Helvetica,Arial,sans-serif;fill:#191919}</style><text x="40" y="1245" font-size="42" font-weight="600">${escape(record.name)}</text><text x="40" y="1290" font-size="24" fill="#66625d">${escape([record.mood ? `feels ${record.mood}` : "", ...(record.occasion || [])].filter(Boolean).join(" · "))}</text><text x="40" y="1360" font-size="20" letter-spacing="4" fill="#66625d">FASHION INTEL</text></svg>`;
+        const composites = [
+          { input: photo, left: 40, top: 40 },
+          ...thumbs.map((thumb, index) => ({ input: thumb, left: 40 + (index * 140), top: 1080 })),
+          { input: Buffer.from(label), left: 0, top: 0 },
+        ];
+        const card = await sharp({ create: { width: 1080, height: 1400, channels: 3, background: { r: 244, g: 240, b: 232 } } })
+          .composite(composites)
+          .png()
+          .toBuffer();
+        res.setHeader("Content-Type", "image/png");
+        res.setHeader("Content-Disposition", `inline; filename="fashion-intel-${record.id.slice(0, 8)}.png"`);
+        res.setHeader("Cache-Control", "no-store");
+        return res.end(card);
+      }
+      if (match[2] === "remix" && req.method === "POST") {
+        if (record.status !== "ready" || !record.garmentIds?.length) return json(res, 409, { error: "Only a finished look can be remixed." });
+        if (running.size >= MAX_CONCURRENT_GENERATIONS) return json(res, 429, { error: "Give the current generations a moment to finish." });
+        const input = await body(req);
+        const slotParts = { top: "upperbody", bottom: "lowerbody", outer: "wholebody_up", shoes: "shoes", accessory: "accessories_up" };
+        const slot = slotParts[input.slot] ? input.slot : null;
+        if (!slot) return json(res, 400, { error: "Pick which piece to swap: top, bottom, outer, shoes, or accessory." });
+        const library = await loadLibrary();
+        const byId = new Map(library.map((item) => [item.id, item]));
+        const swapId = (record.garmentIds || []).find((garmentId) => byId.get(garmentId)?.part === slotParts[slot]);
+        if (!swapId) return json(res, 400, { error: `This look has no ${slot} to swap.` });
+        const keepIds = record.garmentIds.filter((garmentId) => garmentId !== swapId);
+        const now = new Date().toISOString();
+        const remixRecord = {
+          id: randomUUID(),
+          name: `${record.name} (new ${slot})`,
+          occasion: record.occasion || [],
+          reason: "",
+          setting: "",
+          mood: record.mood || null,
+          direction: record.direction || null,
+          inspiration: false,
+          remix: { keepIds, swapId, swapSlot: slot },
+          garmentIds: [],
+          image: null,
+          favorite: false,
+          verdict: null,
+          verdictReason: null,
+          wornAt: [],
+          status: "curating",
+          error: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        const allRecords = await loadOutfits();
+        await atomicJson(outfitsFile, [...allRecords, remixRecord]);
+        void generate(remixRecord.id);
+        return json(res, 202, remixRecord);
       }
       if (match[2] === "wear" && req.method === "POST") {
         const wornAt = [...(record.wornAt || []), new Date().toISOString()];

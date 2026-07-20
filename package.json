@@ -12,7 +12,8 @@
     "check": "npm run build && npm test",
     "test": "node --test tests/*.test.mjs",
     "backup": "node scripts/backup.mjs",
-    "backup:wipe": "node scripts/backup.mjs --wipe"
+    "backup:wipe": "node scripts/backup.mjs --wipe",
+    "start": "npm run build && vite preview"
   },
   "dependencies": {
     "@fontsource-variable/instrument-sans": "^5.2.8",
@@ -24,5 +25,8 @@
     "react-dom": "19.2.0",
     "sharp": "^0.34.5",
     "vite": "6.4.3"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

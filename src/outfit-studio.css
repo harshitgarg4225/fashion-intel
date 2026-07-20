@@ -488,3 +488,19 @@
   margin-top: 12px;
   padding: 9px 16px;
 }
+
+.outfit-swap {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  padding: 6px 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.outfit-swap:hover { color: var(--ink); }

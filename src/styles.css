@@ -1093,3 +1093,83 @@ button { font: inherit; }
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* Auth gate, wishlist flag, season chips */
+
+.auth-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-gate form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(360px, 100%);
+  border: 1px solid var(--line);
+  padding: 40px 36px;
+  text-align: center;
+}
+
+.auth-gate h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: .04em;
+}
+
+.auth-gate p { margin: 0; font-size: 13px; color: var(--muted); }
+
+.auth-gate input {
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 14px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.auth-gate button {
+  border: 1px solid var(--ink);
+  padding: 12px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 520;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.auth-gate button:disabled { opacity: .5; cursor: default; }
+
+.item-flag.wishlist-flag {
+  top: 8px;
+  left: 8px;
+  right: auto;
+  border-color: var(--muted);
+  color: var(--muted);
+}
+
+.season-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.season-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.season-chip:hover { color: var(--ink); border-color: var(--ink); }
+
+.season-chip.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
