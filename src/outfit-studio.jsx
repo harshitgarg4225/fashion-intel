@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowCounterClockwise, Sparkle, SpinnerGap, Trash, WarningCircle } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, CloudSun, Heart, Sparkle, SpinnerGap, Trash, WarningCircle } from "@phosphor-icons/react";
 import { OptimizedImage } from "./OptimizedImage.jsx";
 import "./outfit-studio.css";
 
 const API = "/api/outfits";
 const ACTIVE_STATUSES = new Set(["curating", "rendering"]);
+
+const MOODS = [
+  { id: "confident", label: "Confident" },
+  { id: "effortless", label: "Effortless" },
+  { id: "sharp", label: "Sharp" },
+  { id: "cozy", label: "Cozy" },
+  { id: "playful", label: "Playful" },
+  { id: "bold", label: "Bold" },
+  { id: "romantic", label: "Romantic" },
+  { id: "grounded", label: "Grounded" },
+];
 
 async function api(path, options) {
   const response = await fetch(path, {
@@ -16,6 +27,39 @@ async function api(path, options) {
   return value;
 }
 
+function describeWeatherCode(code) {
+  if (code === 0) return "clear";
+  if (code <= 3) return "partly cloudy";
+  if (code <= 48) return "foggy";
+  if (code <= 67) return "rainy";
+  if (code <= 77) return "snowy";
+  if (code <= 82) return "rain showers";
+  return "stormy";
+}
+
+function getLocalWeather() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("Location is not available in this browser."));
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude.toFixed(3)}&longitude=${longitude.toFixed(3)}&current=temperature_2m,precipitation,weather_code`);
+          if (!response.ok) throw new Error("Weather lookup failed.");
+          const data = await response.json();
+          const current = data.current || {};
+          if (!Number.isFinite(current.temperature_2m)) throw new Error("Weather lookup failed.");
+          resolve(`${Math.round(current.temperature_2m)}°C and ${describeWeatherCode(current.weather_code ?? 0)}`);
+        } catch (error) {
+          reject(error);
+        }
+      },
+      () => reject(new Error("Location permission was declined.")),
+      { timeout: 8000, maximumAge: 600000 },
+    );
+  });
+}
+
 function statusCopy(outfit) {
   if (outfit.status === "curating") return "Styling the combination";
   if (outfit.status === "rendering") return "Rendering the modeled photo";
@@ -23,7 +67,7 @@ function statusCopy(outfit) {
   return null;
 }
 
-function OutfitCard({ outfit, itemsById, onRetry, onDelete }) {
+function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite }) {
   const active = ACTIVE_STATUSES.has(outfit.status);
   const garments = (outfit.garmentIds || []).map((id) => itemsById.get(id)).filter(Boolean);
 
@@ -43,13 +87,25 @@ function OutfitCard({ outfit, itemsById, onRetry, onDelete }) {
             <p>{statusCopy(outfit)}</p>
           </div>
         )}
+        {outfit.status === "ready" && (
+          <button
+            type="button"
+            className={`outfit-favorite${outfit.favorite ? " is-favorite" : ""}`}
+            onClick={() => onToggleFavorite(outfit)}
+            aria-label={outfit.favorite ? `Remove ${outfit.name} from favorites` : `Add ${outfit.name} to favorites`}
+            aria-pressed={Boolean(outfit.favorite)}
+          >
+            <Heart size={18} weight={outfit.favorite ? "fill" : "regular"} aria-hidden="true" />
+          </button>
+        )}
       </div>
       <div className="outfit-body">
         <div className="outfit-heading">
           <h3>{outfit.name}</h3>
-          {!!outfit.occasion?.length && (
+          {(outfit.mood || !!outfit.occasion?.length) && (
             <div className="occasion-row">
-              {outfit.occasion.map((label) => <span className="occasion-chip" key={label}>{label}</span>)}
+              {outfit.mood && <span className="occasion-chip mood-chip">feels {outfit.mood}</span>}
+              {(outfit.occasion || []).map((label) => <span className="occasion-chip" key={label}>{label}</span>)}
             </div>
           )}
         </div>
@@ -82,7 +138,11 @@ function OutfitCard({ outfit, itemsById, onRetry, onDelete }) {
 export function OutfitStudio({ items }) {
   const [outfits, setOutfits] = useState([]);
   const [config, setConfig] = useState(null);
-  const [direction, setDirection] = useState("");
+  const [mood, setMood] = useState(null);
+  const [customMood, setCustomMood] = useState("");
+  const [context, setContext] = useState("");
+  const [weather, setWeather] = useState(null);
+  const [weatherBusy, setWeatherBusy] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -90,6 +150,7 @@ export function OutfitStudio({ items }) {
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const hasActive = outfits.some((outfit) => ACTIVE_STATUSES.has(outfit.status));
+  const chosenMood = customMood.trim() || mood;
 
   const refresh = useCallback(async () => {
     try {
@@ -111,13 +172,29 @@ export function OutfitStudio({ items }) {
     return () => clearInterval(pollRef.current);
   }, [hasActive, refresh]);
 
+  const toggleWeather = async () => {
+    if (weather) { setWeather(null); return; }
+    setWeatherBusy(true);
+    setError("");
+    try {
+      setWeather(await getLocalWeather());
+    } catch (weatherError) {
+      setError(weatherError.message);
+    } finally {
+      setWeatherBusy(false);
+    }
+  };
+
   const createOutfit = async () => {
     setCreating(true);
     setError("");
     try {
-      const record = await api(API, { method: "POST", body: JSON.stringify({ direction: direction.trim() || undefined }) });
+      const direction = [context.trim(), weather ? `today's weather is ${weather}` : ""].filter(Boolean).join("; ");
+      const record = await api(API, {
+        method: "POST",
+        body: JSON.stringify({ mood: chosenMood || undefined, direction: direction || undefined }),
+      });
       setOutfits((current) => [...current, record]);
-      setDirection("");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -145,6 +222,16 @@ export function OutfitStudio({ items }) {
     }
   };
 
+  const toggleFavorite = async (outfit) => {
+    setError("");
+    try {
+      const record = await api(`${API}/${outfit.id}`, { method: "PATCH", body: JSON.stringify({ favorite: !outfit.favorite }) });
+      setOutfits((current) => current.map((entry) => entry.id === outfit.id ? record : entry));
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
   const setupMessage = useMemo(() => {
     if (!config || config.ready) return null;
     const missing = [
@@ -157,37 +244,64 @@ export function OutfitStudio({ items }) {
   }, [config]);
 
   const sortedOutfits = useMemo(
-    () => [...outfits].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
+    () => [...outfits].sort((a, b) => {
+      if (Boolean(a.favorite) !== Boolean(b.favorite)) return a.favorite ? -1 : 1;
+      return (b.createdAt || "").localeCompare(a.createdAt || "");
+    }),
     [outfits],
   );
 
   return (
     <section className="outfit-studio" aria-label="Outfit studio">
-      <div className="outfit-composer">
-        <input
-          value={direction}
-          onChange={(event) => setDirection(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !creating && config?.ready) createOutfit();
-          }}
-          placeholder="Optional direction, e.g. smart-casual dinner, warm evening"
-          aria-label="Styling direction for the new outfit"
-          disabled={creating}
-        />
-        <button type="button" className="outfit-create" onClick={createOutfit} disabled={creating || (config && !config.ready)}>
-          {creating ? <SpinnerGap className="spin" size={15} aria-hidden="true" /> : <Sparkle size={15} aria-hidden="true" />}
-          New look
-        </button>
+      <div className="mood-composer">
+        <h2 className="mood-question">How do you want to feel today?</h2>
+        <div className="mood-chips" role="group" aria-label="Pick a feeling">
+          {MOODS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className={`mood-chip-button${mood === entry.id && !customMood.trim() ? " active" : ""}`}
+              onClick={() => { setMood((current) => current === entry.id ? null : entry.id); setCustomMood(""); }}
+              aria-pressed={mood === entry.id && !customMood.trim()}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+        <div className="mood-inputs">
+          <input
+            value={customMood}
+            onChange={(event) => setCustomMood(event.target.value)}
+            placeholder="…or describe the feeling in your own words"
+            aria-label="Describe the feeling in your own words"
+          />
+          <input
+            value={context}
+            onChange={(event) => setContext(event.target.value)}
+            placeholder="Occasion or constraints, e.g. dinner with friends"
+            aria-label="Occasion or constraints"
+          />
+        </div>
+        <div className="mood-actions">
+          <button type="button" className={`weather-toggle${weather ? " active" : ""}`} onClick={toggleWeather} disabled={weatherBusy} aria-pressed={Boolean(weather)}>
+            {weatherBusy ? <SpinnerGap className="spin" size={15} aria-hidden="true" /> : <CloudSun size={15} aria-hidden="true" />}
+            {weather ? `Dressing for ${weather}` : "Use my weather"}
+          </button>
+          <button type="button" className="outfit-create" onClick={createOutfit} disabled={creating || (config && !config.ready)}>
+            {creating ? <SpinnerGap className="spin" size={15} aria-hidden="true" /> : <Sparkle size={15} aria-hidden="true" />}
+            {chosenMood ? `Dress me ${customMood.trim() ? "for that" : chosenMood}` : "Surprise me"}
+          </button>
+        </div>
+        {config?.stylistProvider && (
+          <p className="stylist-note">Stylist runs on {config.stylistProvider === "anthropic" ? "Claude" : "OpenAI"}; photos render with gpt-image. Weather stays on your device except the line added to your request.</p>
+        )}
       </div>
 
-      {config?.stylistProvider && (
-        <p className="stylist-note">Stylist runs on {config.stylistProvider === "anthropic" ? "Claude" : "OpenAI"}; photos render with gpt-image.</p>
-      )}
       {setupMessage && <p className="status">{setupMessage}</p>}
       {error && <p className="status error">{error}</p>}
       {!error && loading && <p className="status">Loading outfits</p>}
       {!loading && !sortedOutfits.length && !setupMessage && (
-        <p className="status empty">No looks yet. Generate your first outfit from the pieces in your closet.</p>
+        <p className="status empty">No looks yet. Pick a feeling and let the stylist dress you from your own closet.</p>
       )}
 
       {!!sortedOutfits.length && (
@@ -199,6 +313,7 @@ export function OutfitStudio({ items }) {
               itemsById={itemsById}
               onRetry={retryOutfit}
               onDelete={deleteOutfit}
+              onToggleFavorite={toggleFavorite}
             />
           ))}
         </div>

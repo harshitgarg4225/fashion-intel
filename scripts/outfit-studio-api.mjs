@@ -7,6 +7,7 @@ import { resolveStylistProvider } from "./ai-providers.mjs";
 
 const API_ROOT = "/api/outfits";
 const IMAGE_ROOT = "/api/outfits/images";
+const MAX_CONCURRENT_GENERATIONS = 3;
 
 function json(res, status, value) {
   res.statusCode = status;
@@ -128,7 +129,7 @@ export function outfitStudioApi(options = {}) {
           const usedCombinations = records
             .filter((entry) => entry.id !== id && entry.garmentIds?.length >= 2)
             .map((entry) => entry.garmentIds.slice(0, 2).map((garmentId) => byId.get(garmentId)?.name || garmentId));
-          outfit = await curateOutfit({ setting, items: library, direction: record.direction, usedCombinations });
+          outfit = await curateOutfit({ setting, items: library, direction: record.direction, mood: record.mood, usedCombinations });
           await updateOutfit(id, {
             name: outfit.name,
             occasion: outfit.occasion,
@@ -195,8 +196,12 @@ export function outfitStudioApi(options = {}) {
           ].filter(Boolean).join(", ");
           return json(res, 503, { error: `Setup required: add ${missing}.` });
         }
+        if (running.size >= MAX_CONCURRENT_GENERATIONS) {
+          return json(res, 429, { error: `Up to ${MAX_CONCURRENT_GENERATIONS} looks can generate at once. Give the current ones a moment to finish.` });
+        }
         const input = await body(req);
         const direction = typeof input.direction === "string" ? input.direction.trim().slice(0, 500) || null : null;
+        const mood = typeof input.mood === "string" ? input.mood.trim().slice(0, 120) || null : null;
         const now = new Date().toISOString();
         const record = {
           id: randomUUID(),
@@ -204,9 +209,11 @@ export function outfitStudioApi(options = {}) {
           occasion: [],
           reason: "",
           setting: "",
+          mood,
           direction,
           garmentIds: [],
           image: null,
+          favorite: false,
           status: "curating",
           error: null,
           createdAt: now,
@@ -229,6 +236,14 @@ export function outfitStudioApi(options = {}) {
         const updated = await updateOutfit(record.id, { status: record.garmentIds?.length ? "rendering" : "curating", error: null });
         void generate(record.id);
         return json(res, 202, updated);
+      }
+      if (!match[2] && req.method === "PATCH") {
+        const input = await body(req);
+        const patch = {};
+        if (typeof input.favorite === "boolean") patch.favorite = input.favorite;
+        if (typeof input.name === "string" && input.name.trim()) patch.name = input.name.trim().slice(0, 80);
+        if (!Object.keys(patch).length) return json(res, 400, { error: "Nothing to update" });
+        return json(res, 200, await updateOutfit(record.id, patch));
       }
       if (!match[2] && req.method === "DELETE") {
         await atomicJson(outfitsFile, records.filter((entry) => entry.id !== record.id));

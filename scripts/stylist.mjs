@@ -31,18 +31,32 @@ function describeItem(item) {
   return `- id: ${item.id} | ${PART_LABELS[item.part] || item.part} | ${item.name}${colors ? ` | colors ${colors}` : ""}${tags ? ` | ${tags}` : ""}`;
 }
 
-export function buildCurationPrompt({ items, direction, usedCombinations }) {
+const MOOD_GUIDANCE = `
+The user told you how they want to FEEL today. Your job is to translate that feeling into concrete garment choices — this matters more than any generic styling rule. Examples of translation:
+- confident / powerful → structure and sharpness: strong shoulders, darker or saturated dominant color, cleaner lines, higher contrast
+- relaxed / effortless → softness and ease: relaxed silhouettes, washed and natural fabrics, low contrast, comfortable layers
+- playful / fun → the wardrobe's boldest color, graphic, or pattern as the statement piece, lighter overall energy
+- cozy / comforted → texture first: knits, fleece, soft layers, warm tones
+- romantic / soft → gentler tones, drape, delicate details
+- sharp / put-together → the most polished pieces: tailoring, crisp fabrics, deliberate color discipline
+- bold / seen → maximum statement the wardrobe supports, worn with conviction
+- grounded / calm → earth tones, naturals, quiet minimal pieces
+Pick real items that genuinely embody the feeling; explain the outfit in terms of the feeling in your reason.
+`;
+
+export function buildCurationPrompt({ items, direction, mood, usedCombinations }) {
   const inventory = items.map(describeItem).join("\n");
   const used = usedCombinations.length
     ? `\nAlready-created combinations to avoid repeating (top+bottom pairs):\n${usedCombinations.map((combo) => `- ${combo.join(" + ")}`).join("\n")}\n`
     : "";
-  const brief = direction ? `\nStyling direction from the user: ${direction}\n` : "";
+  const feeling = mood ? `\nThe user wants to feel: ${mood}.\n${MOOD_GUIDANCE}` : "";
+  const brief = direction ? `\nAdditional context from the user (occasion, weather, constraints): ${direction}\n` : "";
 
   return `You are an expert personal stylist curating one complete outfit from a real wardrobe.
 
 Wardrobe inventory (each line is one garment):
 ${inventory}
-${used}${brief}
+${used}${feeling}${brief}
 Curate exactly one outfit:
 - Choose exactly one top (a "top" item) as topId and exactly one bottom (a "bottom" item) as bottomId.
 - Optionally add one outer layer, one pair of shoes, and one restrained accessory when they genuinely improve the look; otherwise return null for those fields.
@@ -54,10 +68,10 @@ Curate exactly one outfit:
 - Give the outfit a short evocative name, 1-3 lowercase occasion labels (e.g. smart-casual, weekend, office), one sentence explaining why the combination works, and a restrained real-world photo setting description (e.g. "a quiet warm-stone courtyard with restrained greenery").`;
 }
 
-export async function curateOutfit({ setting, items, direction, usedCombinations = [] }) {
+export async function curateOutfit({ setting, items, direction, mood, usedCombinations = [] }) {
   const result = await structuredAnalysis({
     setting,
-    prompt: buildCurationPrompt({ items, direction, usedCombinations }),
+    prompt: buildCurationPrompt({ items, direction, mood, usedCombinations }),
     schema: CURATION_SCHEMA,
     schemaName: "curated_outfit",
   });

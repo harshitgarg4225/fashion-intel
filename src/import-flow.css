@@ -318,3 +318,53 @@
   .import-status.is-processing::before,
   .import-spinner { animation: none !important; }
 }
+
+/* Import sources (upload, Google Photos, folder) */
+
+.import-sources-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 6px;
+}
+
+.import-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-folder-row {
+  display: flex;
+  gap: 8px;
+}
+
+.import-folder-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+}
+
+.import-folder-row input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.import-sources-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 560px) {
+  .import-folder-row { flex-direction: column; }
+}

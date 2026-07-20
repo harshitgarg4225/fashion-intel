@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { structuredAnalysis } from "./ai-providers.mjs";
 
 const API_ROOT = "/api/import/jobs";
 const ASSET_ROOT = "/api/import/assets";
@@ -10,6 +11,8 @@ const STAGES = new Set(["crop", "garment", "modeled"]);
 const DECISIONS = new Set(["approve", "reject"]);
 const PARTS = new Set(["upperbody", "wholebody_up", "lowerbody", "accessories_up", "shoes"]);
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const FOLDER_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp", ".avif", ".heic", ".heif"]);
+const FOLDER_BATCH_LIMIT = 40;
 
 function json(res, status, value) {
   res.statusCode = status;
@@ -318,27 +321,13 @@ export async function openAIEdit({ key, baseUrl, model, prompt, images, size, ba
   return Buffer.from(encoded, "base64");
 }
 
-async function openAIAnalyze({ key, baseUrl, model, image, mime }) {
-  const response = await fetch(`${baseUrl}/responses`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      input: [{ role: "user", content: [
-        { type: "input_text", text: "Identify every distinct wearable clothing item visible in this image. A photo may show one isolated garment or a person wearing several items. Return one record per actual item that should enter a wardrobe. Ignore the person's body and non-wearable background objects. For each item, include a tight bounding box around only that item using integer coordinates normalized to a 1000 by 1000 image: x and y are the top-left corner, followed by width and height. Boxes may overlap when garments overlap, but each box must focus on one distinct item. Use only these category ids: upperbody, wholebody_up, lowerbody, accessories_up, shoes. Suggest a concise specific name, primary hex color, optional genuinely distinct secondary hex color, and 1-4 useful lowercase detail tags." },
-        { type: "input_image", image_url: `data:${mime};base64,${image.toString("base64")}` },
-      ] }],
-      text: { format: { type: "json_schema", name: "wardrobe_items", strict: true, schema: { type: "object", additionalProperties: false, properties: { items: { type: "array", minItems: 0, maxItems: 8, items: { type: "object", additionalProperties: false, properties: { name: { type: "string" }, part: { type: "string", enum: ["upperbody", "wholebody_up", "lowerbody", "accessories_up", "shoes"] }, color: { type: "string", pattern: "^#[0-9A-Fa-f]{6}$" }, secondaryColor: { anyOf: [{ type: "string", pattern: "^#[0-9A-Fa-f]{6}$" }, { type: "null" }] }, tags: { type: "array", items: { type: "string" }, maxItems: 4 }, boundingBox: { type: "object", additionalProperties: false, properties: { x: { type: "integer", minimum: 0, maximum: 999 }, y: { type: "integer", minimum: 0, maximum: 999 }, width: { type: "integer", minimum: 1, maximum: 1000 }, height: { type: "integer", minimum: 1, maximum: 1000 } }, required: ["x", "y", "width", "height"] } }, required: ["name", "part", "color", "secondaryColor", "tags", "boundingBox"] } } }, required: ["items"] } } },
-    }),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error?.message || `OpenAI analysis failed (${response.status})`);
-  const outputText = result.output_text || result.output?.flatMap((item) => item.content || []).find((item) => item.type === "output_text")?.text;
-  if (!outputText) throw new Error("OpenAI analysis returned no structured result");
-  const parsed = JSON.parse(outputText);
-  if (!Array.isArray(parsed.items)) throw new Error("OpenAI analysis returned an invalid clothing list");
-  return parsed.items;
-}
+const DETECTION_SCHEMA = { type: "object", additionalProperties: false, properties: { items: { type: "array", minItems: 0, maxItems: 8, items: { type: "object", additionalProperties: false, properties: { name: { type: "string" }, part: { type: "string", enum: ["upperbody", "wholebody_up", "lowerbody", "accessories_up", "shoes"] }, color: { type: "string", pattern: "^#[0-9A-Fa-f]{6}$" }, secondaryColor: { anyOf: [{ type: "string", pattern: "^#[0-9A-Fa-f]{6}$" }, { type: "null" }] }, tags: { type: "array", items: { type: "string" }, maxItems: 4 }, boundingBox: { type: "object", additionalProperties: false, properties: { x: { type: "integer", minimum: 0, maximum: 999 }, y: { type: "integer", minimum: 0, maximum: 999 }, width: { type: "integer", minimum: 1, maximum: 1000 }, height: { type: "integer", minimum: 1, maximum: 1000 } }, required: ["x", "y", "width", "height"] } }, required: ["name", "part", "color", "secondaryColor", "tags", "boundingBox"] } } }, required: ["items"] };
+
+const BASE_DETECTION_PROMPT = "Identify every distinct wearable clothing item visible in the photo to catalog. A photo may show one isolated garment or a person wearing several items. Return one record per actual item that should enter a wardrobe. Ignore the person's body and non-wearable background objects. For each item, include a tight bounding box around only that item using integer coordinates normalized to a 1000 by 1000 image: x and y are the top-left corner, followed by width and height. Boxes may overlap when garments overlap, but each box must focus on one distinct item. Use only these category ids: upperbody, wholebody_up, lowerbody, accessories_up, shoes. Suggest a concise specific name, primary hex color, optional genuinely distinct secondary hex color, and 1-4 useful lowercase detail tags.";
+
+const FACE_GATE_PROMPT = `
+
+Identity filter: The FIRST image is the photo to catalog. The SECOND image is a reference photo of the wardrobe owner. Only include garments that are either (a) worn by the person who matches the reference photo's face and build, or (b) shown unworn: flat lay, on a hanger, or as a standalone product shot. Exclude every garment worn by any other person, mannequin, or store display model. When you cannot tell whether the wearer is the reference person, exclude the item. Return an empty list when nothing qualifies.`;
 
 export function wardrobeImportApi(options = {}) {
   let root;
@@ -364,7 +353,46 @@ export function wardrobeImportApi(options = {}) {
       hasApiKey,
       hasModelReference,
       modelReference: referenceSetting,
+      faceFilter: setting("WARDROBE_FACE_FILTER", "on") !== "off" && hasModelReference,
     };
+  }
+
+  async function detectGarments(normalizedImage) {
+    const images = [{ data: normalizedImage, mime: "image/png" }];
+    let prompt = BASE_DETECTION_PROMPT;
+    if (setting("WARDROBE_FACE_FILTER", "on") !== "off") {
+      const referencePath = path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png"));
+      try {
+        images.push({ data: await normalizeImage(await readFile(referencePath)), mime: "image/png" });
+        prompt += FACE_GATE_PROMPT;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    const parsed = await structuredAnalysis({ setting, prompt, images, schema: DETECTION_SCHEMA, schemaName: "wardrobe_items" });
+    if (!Array.isArray(parsed.items)) throw new Error("Garment analysis returned an invalid clothing list");
+    return parsed.items;
+  }
+
+  async function createJobsFromImage(imageData) {
+    const normalizedImage = await normalizeImage(imageData);
+    const detected = (await detectGarments(normalizedImage)).map(normalizeMetadata);
+    const jobs = [];
+    for (const metadata of detected) {
+      const id = randomUUID();
+      const dir = path.join(jobsDir, id); await mkdir(dir, { recursive: true });
+      const originalFile = "original.png";
+      const cropFile = "crop.png";
+      const croppedImage = await cropDetectedItem(normalizedImage, metadata.boundingBox);
+      await writeFile(path.join(dir, originalFile), normalizedImage);
+      await writeFile(path.join(dir, cropFile), croppedImage);
+      const now = new Date().toISOString();
+      const cropStage = { ...stageState(), status: "review", assetUrl: `${ASSET_ROOT}/${id}/${cropFile}`, updatedAt: now };
+      const job = { id, status: "active", metadata, stages: { crop: cropStage, garment: stageState(), modeled: stageState() }, createdAt: now, updatedAt: now, internal: { originalFile, cropFile, originalMime: "image/png" } };
+      job.originalAssetUrl = `${ASSET_ROOT}/${id}/${originalFile}`;
+      await saveJob(job); jobs.push(publicJob(job));
+    }
+    return jobs;
   }
 
   async function loadJob(id) {
@@ -537,25 +565,39 @@ export function wardrobeImportApi(options = {}) {
         }
         const input = await body(req);
         const image = decodeImage(input);
-        const normalizedImage = await normalizeImage(image.data);
-        const key = setting("OPENAI_API_KEY");
-        const detected = (await openAIAnalyze({ key, baseUrl: apiBaseUrl(), model: setting("OPENAI_VISION_MODEL", "gpt-5.4-mini"), image: normalizedImage, mime: "image/png" })).map(normalizeMetadata);
-        const jobs = [];
-        for (const metadata of detected) {
-          const id = randomUUID();
-          const dir = path.join(jobsDir, id); await mkdir(dir, { recursive: true });
-          const originalFile = "original.png";
-          const cropFile = "crop.png";
-          const croppedImage = await cropDetectedItem(normalizedImage, metadata.boundingBox);
-          await writeFile(path.join(dir, originalFile), normalizedImage);
-          await writeFile(path.join(dir, cropFile), croppedImage);
-          const now = new Date().toISOString();
-          const cropStage = { ...stageState(), status: "review", assetUrl: `${ASSET_ROOT}/${id}/${cropFile}`, updatedAt: now };
-          const job = { id, status: "active", metadata, stages: { crop: cropStage, garment: stageState(), modeled: stageState() }, createdAt: now, updatedAt: now, internal: { originalFile, cropFile, originalMime: "image/png" } };
-          job.originalAssetUrl = `${ASSET_ROOT}/${id}/${originalFile}`;
-          await saveJob(job); jobs.push(publicJob(job));
-        }
+        const jobs = await createJobsFromImage(image.data);
         return json(res, 202, { jobs, noClothingDetected: jobs.length === 0 });
+      }
+      if (url.pathname === "/api/import/folder" && req.method === "POST") {
+        const setup = await setupStatus();
+        if (!setup.ready) {
+          return json(res, 503, { error: "Setup required: add OPENAI_API_KEY in .env and a PNG photo of yourself at data/model-reference.png, then restart the app." });
+        }
+        const input = await body(req);
+        const folder = typeof input.path === "string" ? input.path.trim() : "";
+        if (!folder || !path.isAbsolute(folder)) return json(res, 400, { error: "Provide an absolute folder path, e.g. /Users/you/Pictures/outfits" });
+        let entries;
+        try {
+          entries = await readdir(folder, { withFileTypes: true });
+        } catch {
+          return json(res, 400, { error: "That folder could not be read. Check the path and permissions." });
+        }
+        const found = entries
+          .filter((entry) => entry.isFile() && FOLDER_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
+          .map((entry) => path.join(folder, entry.name))
+          .sort();
+        if (!found.length) return json(res, 400, { error: "No importable images (jpg, png, webp, heic, tiff, bmp, avif) were found in that folder." });
+        const files = found.slice(0, FOLDER_BATCH_LIMIT);
+        void (async () => {
+          for (const file of files) {
+            try {
+              await createJobsFromImage(await readFile(file));
+            } catch (error) {
+              console.error(`[fashion-intel] Folder import skipped ${path.basename(file)}: ${error.message}`);
+            }
+          }
+        })();
+        return json(res, 202, { queued: files.length, skipped: found.length - files.length });
       }
       if (url.pathname === API_ROOT && req.method === "GET") {
         const ids = await readdir(jobsDir).catch(() => []);
@@ -672,6 +714,10 @@ export function wardrobeImportApi(options = {}) {
       libraryAssetDir = path.join(dataDir, "imported");
       await mkdir(jobsDir, { recursive: true });
       await mkdir(libraryAssetDir, { recursive: true });
+      if (options.bridge) {
+        options.bridge.createJobsFromImage = createJobsFromImage;
+        options.bridge.setupStatus = setupStatus;
+      }
       const ids = await readdir(jobsDir).catch(() => []);
       for (const id of ids) {
         const job = await loadJob(id);

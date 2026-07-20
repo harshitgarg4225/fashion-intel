@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowCounterClockwise, Check, Plus, SpinnerGap, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, Check, FolderOpen, GoogleLogo, Plus, SpinnerGap, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import "./import-flow.css";
 
 const API = "/api/import/jobs";
 const CONFIG_API = "/api/import/config";
+const FOLDER_API = "/api/import/folder";
+const GOOGLE_API = "/api/google";
 const PARTS = [
   ["upperbody", "Tops"],
   ["wholebody_up", "Jackets"],
@@ -146,9 +148,22 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(null);
   const [setup, setSetup] = useState(null);
+  const [googleStatus, setGoogleStatus] = useState(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folderPath, setFolderPath] = useState("");
+  const [folderBusy, setFolderBusy] = useState(false);
+  const [batchNotice, setBatchNotice] = useState("");
+  const [batchUntil, setBatchUntil] = useState(0);
 
   useEffect(() => {
     api(CONFIG_API).then(setSetup).catch((requestError) => setSetup({ ready: false, error: requestError.message }));
+    api(`${GOOGLE_API}/status`).then(setGoogleStatus).catch(() => setGoogleStatus(null));
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("google") === "connected") {
+      window.history.replaceState(null, "", window.location.pathname);
+      setOpen(true);
+    }
     api(API)
       .then((storedJobs) => {
         const visibleJobs = storedJobs.filter((job) => job.status !== "complete" && job.stages?.crop?.status !== "rejected" && job.stages?.garment?.status !== "rejected" && job.stages?.modeled?.status !== "rejected");
@@ -171,6 +186,99 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved }) {
     const timer = setInterval(() => jobs.forEach((job) => refresh(job.id)), 900);
     return () => clearInterval(timer);
   }, [jobs, refresh]);
+
+  const absorbJobs = useCallback((allJobs) => {
+    const visibleJobs = allJobs.filter((job) => job.status !== "complete" && job.stages?.crop?.status !== "rejected" && job.stages?.garment?.status !== "rejected" && job.stages?.modeled?.status !== "rejected");
+    setDrafts((current) => {
+      const next = { ...current };
+      for (const job of visibleJobs) if (!next[job.id]) next[job.id] = defaultDraft(job);
+      return next;
+    });
+    let added = false;
+    setJobs((current) => {
+      const known = new Set(current.map((job) => job.id));
+      const fresh = visibleJobs.filter((job) => !known.has(job.id));
+      if (!fresh.length) return current;
+      added = true;
+      return [...current, ...fresh];
+    });
+    return added;
+  }, []);
+
+  useEffect(() => {
+    if (!batchUntil) return undefined;
+    const timer = setInterval(async () => {
+      if (Date.now() >= batchUntil) {
+        setBatchUntil(0);
+        setBatchNotice("");
+        return;
+      }
+      try {
+        const all = await api(API);
+        if (absorbJobs(all)) setBatchUntil(Date.now() + 120000);
+      } catch {}
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [batchUntil, absorbJobs]);
+
+  const startBatchWatch = useCallback((noticeText) => {
+    setBatchNotice(noticeText);
+    setBatchUntil(Date.now() + 180000);
+    setOpen(true);
+  }, []);
+
+  const startGooglePick = async () => {
+    setError(""); setNotice(null);
+    if (!googleStatus?.configured) {
+      setError("Google Photos needs setup: add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env, restart the app, then connect.");
+      return;
+    }
+    if (!googleStatus.connected) {
+      window.location.href = `${GOOGLE_API}/auth`;
+      return;
+    }
+    setGoogleBusy(true);
+    try {
+      const session = await api(`${GOOGLE_API}/picker/session`, { method: "POST" });
+      window.open(session.pickerUri, "_blank", "noopener");
+      setBatchNotice("Pick photos in the Google Photos tab, then come back — the import starts automatically.");
+      const started = Date.now();
+      while (Date.now() - started < 5 * 60 * 1000) {
+        await new Promise((resolve) => setTimeout(resolve, session.pollIntervalMs || 3000));
+        const state = await api(`${GOOGLE_API}/picker/session/${encodeURIComponent(session.id)}`);
+        if (state.mediaItemsSet) {
+          const result = await api(`${GOOGLE_API}/picker/session/${encodeURIComponent(session.id)}/import`, { method: "POST" });
+          startBatchWatch(`Importing ${result.queued} photo${result.queued === 1 ? "" : "s"} from Google Photos. New pieces appear below as they are detected.`);
+          return;
+        }
+      }
+      setBatchNotice("");
+      setError("The Google Photos selection timed out. Try again.");
+    } catch (requestError) {
+      setBatchNotice("");
+      if (requestError.message.includes("connected") || requestError.message.includes("expired")) setGoogleStatus((current) => current ? { ...current, connected: false } : current);
+      setError(requestError.message);
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
+  const importFolder = async () => {
+    setError(""); setNotice(null);
+    const target = folderPath.trim();
+    if (!target) { setError("Enter the absolute path of the folder to import."); return; }
+    setFolderBusy(true);
+    try {
+      const result = await api(FOLDER_API, { method: "POST", body: JSON.stringify({ path: target }) });
+      setFolderOpen(false);
+      setFolderPath("");
+      startBatchWatch(`Importing ${result.queued} image${result.queued === 1 ? "" : "s"} from the folder${result.skipped ? ` (first ${result.queued}; ${result.skipped} more skipped this batch)` : ""}. New pieces appear below as they are detected.`);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setFolderBusy(false);
+    }
+  };
 
   const submitFiles = useCallback(async (files) => {
     if (!setup?.ready) { setOpen(true); return; }
@@ -278,6 +386,23 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved }) {
       <div className="import-popover-backdrop" data-open={open} onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
         <section className="import-popover" role="dialog" aria-modal="true" aria-labelledby="import-title">
           <header className="import-popover__header"><div><p className="import-popover__eyebrow">Wardrobe import</p><h2 className="import-popover__title" id="import-title">{readyCount ? `${readyCount} ready for review` : activeStatus?.tone === "error" ? "Import needs attention" : jobs.length ? "Preparing new pieces" : notice?.text || "Add to your wardrobe"}</h2></div><button className="import-icon-button" type="button" onClick={() => setOpen(false)} aria-label="Close import progress"><X size={20} /></button></header>
+          {!setupRequired && (
+            <div className="import-sources-block">
+              <div className="import-sources">
+                <button className="import-button" type="button" disabled={!setup?.ready} onClick={() => { setNotice(null); inputRef.current?.click(); }}><UploadSimple size={14} /> Upload</button>
+                <button className="import-button" type="button" disabled={googleBusy} onClick={startGooglePick}>{googleBusy ? <SpinnerGap size={14} className="import-spinner" /> : <GoogleLogo size={14} />} {googleStatus?.connected ? "Google Photos" : "Connect Google Photos"}</button>
+                <button className="import-button" type="button" onClick={() => setFolderOpen((current) => !current)} aria-expanded={folderOpen}><FolderOpen size={14} /> From folder</button>
+              </div>
+              {folderOpen && (
+                <div className="import-folder-row">
+                  <input value={folderPath} onChange={(event) => setFolderPath(event.target.value)} placeholder="/Users/you/Pictures/wardrobe — for Apple Photos, export an album to a folder first" aria-label="Absolute folder path to import" onKeyDown={(event) => { if (event.key === "Enter" && !folderBusy) importFolder(); }} />
+                  <button className="import-button import-button--primary" type="button" disabled={folderBusy} onClick={importFolder}>{folderBusy ? <SpinnerGap size={14} className="import-spinner" /> : <Check size={14} weight="bold" />} Import folder</button>
+                </div>
+              )}
+              {batchNotice && <p className="import-status" role="status">{batchNotice}</p>}
+              {setup?.faceFilter && <p className="import-sources-note">Face filter is on: only clothes worn by you (or shown unworn) enter your closet. Photos of other people are skipped.</p>}
+            </div>
+          )}
           {!jobs.length ? setupRequired ? <div className="import-drop-target import-setup-warning"><WarningCircle size={30} /><h2>Setup required</h2><p>Add your OpenAI API key to <code>.env</code> and a PNG reference photo of yourself at <code>{setup.modelReference || "data/model-reference.png"}</code>, then restart the app.</p></div> : <div className="import-drop-target"><UploadSimple size={28} /><h2>{notice ? "Try another image" : "Choose or paste an image"}</h2><p>{notice?.detail || "We’ll isolate each clothing item, suggest its details, and hold everything for your approval."}</p><button className="import-button import-button--primary" disabled={!setup?.ready} onClick={() => { setNotice(null); inputRef.current?.click(); }}>Choose images</button></div> : (
             <>
               <div className={`import-progress${activeStatus?.tone !== "processing" ? " is-reviewing" : progress < 100 ? " is-indeterminate" : ""}`}><div className="import-progress__meta"><span>{activeStatus?.text}</span><span>{jobs.length} {jobs.length === 1 ? "item" : "items"}</span></div>{activeStatus?.tone === "processing" && <div className="import-progress__track"><div className="import-progress__bar" style={{ "--import-progress": `${progress}%` }} /></div>}</div>

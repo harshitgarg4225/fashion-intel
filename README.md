@@ -9,13 +9,14 @@ Your wardrobe, digitized and styled with AI.
 
 </div>
 
-Fashion Intel turns photos of your clothes into an organized digital closet, then styles complete outfits from it and renders them on you.
+Fashion Intel turns photos of your clothes into an organized digital closet, then dresses you from it — starting from how you want to *feel*.
 
-- **Import** — drop, paste, or upload any photo. AI vision detects every garment, extracts a clean transparent product cutout, and generates an editorial photo of the piece modeled on you.
-- **Closet** — browse everything you own by category, search by name, tag, or category, and see your wardrobe's dominant color palette at a glance.
-- **Outfit Studio** — one click curates a complete look (top, bottom, optional layer, shoes, accessory) from your real closet with an LLM stylist, explains why it works, and renders a square lookbook photo of you wearing it. Give it an optional direction like "smart-casual dinner" or "warm evening".
+- **"How do you want to feel today?"** — pick a feeling (confident, cozy, bold, effortless…) or describe it in your own words, add an occasion and one-tap local weather, and the stylist curates a complete look from your real closet, explains why it works, and renders a lookbook photo of *you* wearing it.
+- **Import from anywhere** — drop, paste, or upload photos; pick photos straight from **Google Photos** (official Picker API); or point it at a **local folder** (export an Apple Photos album to a folder and import it in one go). AI vision detects every garment, extracts a clean product cutout, and models each piece on you.
+- **Only *your* clothes** — with your reference photo in place, the face filter keeps garments worn by you (or shown unworn) and skips friends, mannequins, and store photos automatically.
+- **Closet** — browse by category, search by name/tag/category, see per-category counts and your wardrobe's dominant color palette. Favorite the looks that worked.
 
-Everything stays local: originals, cutouts, modeled photos, outfits, and the JSON database live in `data/` on your machine.
+Everything stays local: originals, cutouts, renders, outfits, and the JSON database live in `data/` on your machine. See [ROADMAP.md](ROADMAP.md) for the full product plan.
 
 ## Quick start
 
@@ -33,7 +34,23 @@ Then:
 2. Put a clear PNG photo of yourself at `data/model-reference.png`.
 3. Open [localhost:5173](http://localhost:5173) and drop in a photo of your clothes.
 
-Optionally add `ANTHROPIC_API_KEY` to run the outfit-curation stylist on Claude — image rendering still uses OpenAI gpt-image, which is the only part that requires an OpenAI key.
+Optionally add `ANTHROPIC_API_KEY` to run garment detection and outfit curation on Claude — image rendering still uses OpenAI gpt-image, which is the only part that requires an OpenAI key.
+
+### Google Photos import (optional)
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project, enable the **Photos Picker API**, and create an OAuth client (type **Web application**) with `http://localhost:5173/api/google/callback` as an authorized redirect URI.
+2. Put the client ID and secret in `.env` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) and restart.
+3. In the import tray, hit **Connect Google Photos**, approve access, then pick photos in Google's own picker — the import starts automatically when you're done picking.
+
+The app uses only the narrow Picker scope: it can never browse your library, only receive the photos you explicitly pick. The OAuth token is stored locally in `data/` with owner-only permissions.
+
+### Apple Photos / camera roll
+
+There is no public Apple cloud API, so use the folder path: export an album from Photos (**File → Export**) to a folder, then use **From folder** in the import tray with that path. Any folder of jpg/png/webp/heic images works.
+
+### Face filter
+
+When `data/model-reference.png` exists and `WARDROBE_FACE_FILTER` isn't `off`, every import (upload, Google Photos, folder) keeps only garments worn by the person matching your reference photo — or garments shown unworn (flat lay, hanger, product shot). Photos of other people are skipped, which makes whole-camera-roll imports practical.
 
 ## How it works
 
@@ -55,11 +72,18 @@ Every generation step is reviewable: approve, reject, or regenerate with a corre
 | `OPENAI_VISION_MODEL` | `gpt-5.4-mini` | Garment detection |
 | `OPENAI_IMAGE_MODEL` | `gpt-image-2` | Cutouts, modeled photos, outfit renders |
 | `OPENAI_IMAGE_QUALITY` | `high` | Image quality |
-| `ANTHROPIC_API_KEY` | Optional | Runs the outfit stylist on Claude when set |
+| `ANTHROPIC_API_KEY` | Optional | Runs detection + stylist on Claude when set |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5` | Claude stylist model |
-| `WARDROBE_STYLIST_PROVIDER` | auto | Force `openai` or `anthropic` for the stylist |
+| `WARDROBE_STYLIST_PROVIDER` | auto | Force `openai` or `anthropic` for detection + stylist |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional | Enables Google Photos import |
+| `WARDROBE_FACE_FILTER` | `on` | `off` disables the only-my-clothes filter |
 | `WARDROBE_MODEL_REFERENCE` | `data/model-reference.png` | Your reference photo |
 | `WARDROBE_DATA_DIR` | `data` | Local storage location |
+| `WARDROBE_HOST` | `127.0.0.1` | Set `0.0.0.0` to expose on your LAN (trusted networks only) |
+
+## Security posture
+
+Local-first by design: the server binds to loopback unless you opt out, personal data and tokens never enter Git, Google access is limited to the picker scope with CSRF-protected OAuth, all endpoints validate and cap input sizes, and image generation is concurrency-limited to bound spend. Details and planned hardening are in [ROADMAP.md](ROADMAP.md).
 
 ## Import at scale with agent skills
 
