@@ -44,19 +44,30 @@ The user told you how they want to FEEL today. Your job is to translate that fee
 Pick real items that genuinely embody the feeling; explain the outfit in terms of the feeling in your reason.
 `;
 
-export function buildCurationPrompt({ items, direction, mood, usedCombinations }) {
-  const inventory = items.map(describeItem).join("\n");
+export function buildCurationPrompt({ items, direction, mood, usedCombinations, feedback = [], profile = null, hasItemImages = false, hasInspiration = false }) {
+  const inventory = items.map((item, index) => `${describeItem(item)}${hasItemImages ? ` | garment photo ${index + 1}` : ""}`).join("\n");
   const used = usedCombinations.length
     ? `\nAlready-created combinations to avoid repeating (top+bottom pairs):\n${usedCombinations.map((combo) => `- ${combo.join(" + ")}`).join("\n")}\n`
     : "";
   const feeling = mood ? `\nThe user wants to feel: ${mood}.\n${MOOD_GUIDANCE}` : "";
   const brief = direction ? `\nAdditional context from the user (occasion, weather, constraints): ${direction}\n` : "";
+  const notes = profile?.styleNotes ? `\nThe user's persistent style profile (respect it): ${profile.styleNotes}\n` : "";
+  const rules = profile?.hardRules ? `\nHard rules from the user — never violate these: ${profile.hardRules}\n` : "";
+  const learned = feedback.length
+    ? `\nFeedback the user gave on earlier looks — learn from it:\n${feedback.map((entry) => `- ${entry.name} (${entry.garments.join(" + ")}): ${entry.verdict === "up" ? "liked" : "disliked"}${entry.reason ? ` — ${entry.reason}` : ""}`).join("\n")}\n`
+    : "";
+  const visuals = hasItemImages
+    ? "\nThe garment photos are attached in inventory order — use them to judge texture, pattern, and how pieces will actually read together, not just the metadata.\n"
+    : "";
+  const inspiration = hasInspiration
+    ? "\nThe FINAL attached image is an inspiration photo from the user. Recreate its overall vibe — silhouette, color story, formality — as closely as the wardrobe allows, using only owned items. Mention in your reason how the look channels the inspiration.\n"
+    : "";
 
   return `You are an expert personal stylist curating one complete outfit from a real wardrobe.
 
 Wardrobe inventory (each line is one garment):
 ${inventory}
-${used}${feeling}${brief}
+${used}${feeling}${brief}${notes}${rules}${learned}${visuals}${inspiration}
 Curate exactly one outfit:
 - Choose exactly one top (a "top" item) as topId and exactly one bottom (a "bottom" item) as bottomId.
 - Optionally add one outer layer, one pair of shoes, and one restrained accessory when they genuinely improve the look; otherwise return null for those fields.
@@ -68,10 +79,13 @@ Curate exactly one outfit:
 - Give the outfit a short evocative name, 1-3 lowercase occasion labels (e.g. smart-casual, weekend, office), one sentence explaining why the combination works, and a restrained real-world photo setting description (e.g. "a quiet warm-stone courtyard with restrained greenery").`;
 }
 
-export async function curateOutfit({ setting, items, direction, mood, usedCombinations = [] }) {
+export async function curateOutfit({ setting, items, direction, mood, usedCombinations = [], feedback = [], profile = null, itemImages = [], inspirationImage = null }) {
+  const images = [...itemImages];
+  if (inspirationImage) images.push(inspirationImage);
   const result = await structuredAnalysis({
     setting,
-    prompt: buildCurationPrompt({ items, direction, mood, usedCombinations }),
+    prompt: buildCurationPrompt({ items, direction, mood, usedCombinations, feedback, profile, hasItemImages: itemImages.length > 0, hasInspiration: Boolean(inspirationImage) }),
+    images,
     schema: CURATION_SCHEMA,
     schemaName: "curated_outfit",
   });

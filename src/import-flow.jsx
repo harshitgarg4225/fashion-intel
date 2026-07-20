@@ -103,6 +103,93 @@ function ReviewEditor({ job, stage, draft, setDraft, regenPrompt, setRegenPrompt
   );
 }
 
+function ReferenceCapture({ setup, onDone }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const fileRef = useRef(null);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
+
+  const startCamera = async () => {
+    setError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1024 } } });
+      streamRef.current = stream;
+      setCameraOn(true);
+      requestAnimationFrame(() => { if (videoRef.current) videoRef.current.srcObject = stream; });
+    } catch {
+      setError("Camera access was declined — upload a photo instead.");
+    }
+  };
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setCameraOn(false);
+  };
+
+  const submit = async (imageDataUrl) => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/setup/reference", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageDataUrl }) });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.error || "Could not save the reference photo.");
+      stopCamera();
+      onDone(value);
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video?.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    submit(canvas.toDataURL("image/png"));
+  };
+
+  return (
+    <div className="reference-capture">
+      <h3>Add your reference photo</h3>
+      <p>A clear, well-lit photo of yourself from the front. It stays on this machine and powers the modeled photos and the only-my-clothes filter.</p>
+      {cameraOn && <video ref={videoRef} autoPlay playsInline muted className="reference-video" />}
+      <div className="import-actions">
+        {!cameraOn ? (
+          <button className="import-button" type="button" onClick={startCamera}><UploadSimple size={14} /> Use camera</button>
+        ) : (
+          <>
+            <button className="import-button import-button--primary" type="button" disabled={busy} onClick={capture}><Check size={14} weight="bold" /> Capture</button>
+            <button className="import-button" type="button" onClick={stopCamera}>Cancel</button>
+          </>
+        )}
+        <button className="import-button" type="button" disabled={busy} onClick={() => fileRef.current?.click()}><Plus size={14} /> Upload a photo</button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file?.type.startsWith("image/")) submit(await fileToDataUrl(file));
+          }}
+        />
+      </div>
+      {!setup?.hasApiKey && <p className="import-card__detail">You'll still need <code>OPENAI_API_KEY</code> in <code>.env</code> (restart afterwards) before imports can run.</p>}
+      {error && <p className="import-status is-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function CleanupEditor({ job, tolerance, setTolerance, busy, onPreview, onAccept }) {
   const stage = job.stages.garment;
   const contaminated = stage.cleanupDiagnostics?.contaminatedPixels;
@@ -403,7 +490,7 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved }) {
               {setup?.faceFilter && <p className="import-sources-note">Face filter is on: only clothes worn by you (or shown unworn) enter your closet. Photos of other people are skipped.</p>}
             </div>
           )}
-          {!jobs.length ? setupRequired ? <div className="import-drop-target import-setup-warning"><WarningCircle size={30} /><h2>Setup required</h2><p>Add your OpenAI API key to <code>.env</code> and a PNG reference photo of yourself at <code>{setup.modelReference || "data/model-reference.png"}</code>, then restart the app.</p></div> : <div className="import-drop-target"><UploadSimple size={28} /><h2>{notice ? "Try another image" : "Choose or paste an image"}</h2><p>{notice?.detail || "We’ll isolate each clothing item, suggest its details, and hold everything for your approval."}</p><button className="import-button import-button--primary" disabled={!setup?.ready} onClick={() => { setNotice(null); inputRef.current?.click(); }}>Choose images</button></div> : (
+          {!jobs.length ? setupRequired ? <div className="import-drop-target import-setup-warning"><WarningCircle size={30} /><h2>Setup required</h2>{setup?.hasModelReference ? <p>Add your OpenAI API key to <code>.env</code>, then restart the app. Your reference photo is already in place.</p> : <ReferenceCapture setup={setup} onDone={setSetup} />}</div> : <div className="import-drop-target"><UploadSimple size={28} /><h2>{notice ? "Try another image" : "Choose or paste an image"}</h2><p>{notice?.detail || "We’ll isolate each clothing item, suggest its details, and hold everything for your approval."}</p><button className="import-button import-button--primary" disabled={!setup?.ready} onClick={() => { setNotice(null); inputRef.current?.click(); }}>Choose images</button></div> : (
             <>
               <div className={`import-progress${activeStatus?.tone !== "processing" ? " is-reviewing" : progress < 100 ? " is-indeterminate" : ""}`}><div className="import-progress__meta"><span>{activeStatus?.text}</span><span>{jobs.length} {jobs.length === 1 ? "item" : "items"}</span></div>{activeStatus?.tone === "processing" && <div className="import-progress__track"><div className="import-progress__bar" style={{ "--import-progress": `${progress}%` }} /></div>}</div>
               {reviewJob && reviewStage ? <ReviewEditor job={reviewJob} stage={reviewStage} draft={drafts[reviewJob.id] || defaultDraft(reviewJob)} setDraft={(draft) => setDrafts((current) => ({ ...current, [reviewJob.id]: draft }))} regenPrompt={regenerationPrompts[`${reviewJob.id}:${reviewStage}`] || ""} setRegenPrompt={(prompt) => setRegenerationPrompts((current) => ({ ...current, [`${reviewJob.id}:${reviewStage}`]: prompt }))} busy={busyId === reviewJob.id} onAction={(action, prompt) => perform(reviewJob, reviewStage, action, prompt)} /> : reviewJob && hasCleanupFailure(reviewJob) ? <CleanupEditor job={reviewJob} tolerance={cleanupTolerances[reviewJob.id] ?? reviewJob.stages.garment.cleanupTolerance ?? 46} setTolerance={(tolerance) => setCleanupTolerances((current) => ({ ...current, [reviewJob.id]: tolerance }))} busy={busyId === reviewJob.id} onPreview={(tolerance) => performCleanup(reviewJob, "preview", tolerance)} onAccept={() => performCleanup(reviewJob, "accept")} /> : null}

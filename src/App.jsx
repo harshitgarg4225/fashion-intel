@@ -3,6 +3,13 @@ import { Check, MagnifyingGlass, Plus, Trash, X } from "@phosphor-icons/react";
 import { WardrobeImportFlow } from "./import-flow.jsx";
 import { OptimizedImage } from "./OptimizedImage.jsx";
 import { OutfitStudio } from "./outfit-studio.jsx";
+import { Insights } from "./insights.jsx";
+
+function initialViewState() {
+  const params = new URLSearchParams(window.location.search);
+  const view = ["outfits", "insights"].includes(params.get("view")) ? params.get("view") : params.get("feel") ? "outfits" : "closet";
+  return { view, feel: params.get("feel") || null };
+}
 
 const STORAGE_KEY = "open-wardrobe-edits-v1";
 const DELETED_STORAGE_KEY = "open-wardrobe-deleted-v1";
@@ -172,6 +179,8 @@ function GalleryItem({ item, selected, onOpen }) {
         sizes="(max-width: 520px) calc(50vw - 16px), (max-width: 860px) calc(33vw - 18px), 180px"
         breakpoints={[120, 180, 240, 320, 480]}
       />
+      {item.duplicateOf && <span className="item-flag dup-flag" title="Possible duplicate">dup?</span>}
+      {item.inLaundry && <span className="item-flag laundry-flag" title="In the laundry">wash</span>}
     </button>
   );
 }
@@ -332,11 +341,33 @@ function ItemEditor({ draft, setDraft, palette, sampling, setSampling, sampleSta
         <span>Details</span>
         <TagEditor tags={draft.tags} onChange={(tags) => setDraft((current) => ({ ...current, tags }))} />
       </div>
+
+      <div className="item-flags-row">
+        <label className="field price-field">
+          <span>Price</span>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={draft.price ?? ""}
+            placeholder="optional"
+            onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value === "" ? null : Math.max(0, Number(event.target.value)) }))}
+          />
+        </label>
+        <label className="laundry-toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(draft.inLaundry)}
+            onChange={(event) => setDraft((current) => ({ ...current, inLaundry: event.target.checked }))}
+          />
+          <span>In the laundry — stylist skips it</span>
+        </label>
+      </div>
     </div>
   );
 }
 
-function ItemViewer({ item, onClose, onSave, onDelete }) {
+function ItemViewer({ item, onClose, onSave, onDelete, duplicateName, onDismissDuplicate }) {
   const closeButtonRef = useRef(null);
   const imageRef = useRef(null);
   const samplingCanvasRef = useRef(null);
@@ -344,7 +375,7 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
   const [sampling, setSampling] = useState(null);
   const [sampleStatus, setSampleStatus] = useState("");
   const [palette, setPalette] = useState(item.palette || []);
-  const [draft, setDraft] = useState({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])] });
+  const [draft, setDraft] = useState({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry) });
   const [shaking, setShaking] = useState(false);
   const [closeBlocked, setCloseBlocked] = useState(false);
   const type = TYPE_MAP[item.part]?.singular || "Wardrobe item";
@@ -362,12 +393,16 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
       color: draft.color?.toLowerCase() || null,
       secondaryColor: draft.secondaryColor?.toLowerCase() || null,
       tags: normalizedTags(draft.tags),
+      price: draft.price ?? null,
+      inLaundry: Boolean(draft.inLaundry),
     }) !== JSON.stringify({
       name: (item.name || "").trim(),
       part: item.part,
       color: item.color?.toLowerCase() || null,
       secondaryColor: item.secondaryColor?.toLowerCase() || null,
       tags: normalizedTags(item.tags || []),
+      price: item.price ?? null,
+      inLaundry: Boolean(item.inLaundry),
     });
   }, [draft, item]);
 
@@ -412,11 +447,11 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
     setSampling(null);
     setSampleStatus("");
     setPalette(item.palette || []);
-    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])] });
+    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry) });
   }, [item]);
 
   const cancelEditing = () => {
-    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])] });
+    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])], price: item.price ?? null, inLaundry: Boolean(item.inLaundry) });
     setSampling(null);
     setSampleStatus("");
     onClose();
@@ -514,6 +549,13 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
           sampleStatus={sampleStatus}
         />
 
+        {item.duplicateOf && (
+          <p className="duplicate-notice" role="status">
+            Looks like a duplicate of <strong>{duplicateName || "another piece"}</strong>.
+            <button type="button" onClick={onDismissDuplicate}>Not a duplicate</button>
+          </p>
+        )}
+
         {closeBlocked && <p className="unsaved-notice" role="status">Save or cancel changes before closing.</p>}
 
         <div className="viewer-actions">
@@ -539,7 +581,8 @@ export function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [view, setView] = useState("closet");
+  const [{ view, feel }, setViewState] = useState(initialViewState);
+  const setView = (nextView) => setViewState((current) => ({ ...current, view: nextView }));
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -597,9 +640,44 @@ export function App() {
     setSelectedId(null);
   };
 
-  const saveItem = (updatedItem) => {
+  const saveItem = async (updatedItem) => {
+    if (updatedItem.id.startsWith("import-")) {
+      try {
+        const record = await fetch(`/api/import/wardrobe/${updatedItem.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: updatedItem.name,
+            part: updatedItem.part,
+            color: updatedItem.color,
+            secondaryColor: updatedItem.secondaryColor ?? null,
+            tags: updatedItem.tags,
+            price: updatedItem.price ?? null,
+            inLaundry: Boolean(updatedItem.inLaundry),
+          }),
+        }).then((response) => { if (!response.ok) throw new Error("Could not save the item."); return response.json(); });
+        setItems((current) => current.map((item) => item.id === record.id ? { ...item, ...record } : item));
+        return;
+      } catch (requestError) {
+        setError(requestError.message);
+        return;
+      }
+    }
     setItems((current) => current.map((item) => item.id === updatedItem.id ? updatedItem : item));
     persistEdit(updatedItem);
+  };
+
+  const dismissDuplicate = async (id) => {
+    try {
+      const record = await fetch(`/api/import/wardrobe/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ duplicateOf: null }),
+      }).then((response) => { if (!response.ok) throw new Error("Could not update the item."); return response.json(); });
+      setItems((current) => current.map((item) => item.id === record.id ? { ...item, ...record } : item));
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
   const deleteItem = async (id) => {
@@ -636,6 +714,7 @@ export function App() {
             <nav className="view-switch" aria-label="Choose view">
               <button type="button" className={view === "closet" ? "active" : ""} onClick={() => setView("closet")} aria-pressed={view === "closet"}>Closet</button>
               <button type="button" className={view === "outfits" ? "active" : ""} onClick={() => setView("outfits")} aria-pressed={view === "outfits"}>Outfit Studio</button>
+              <button type="button" className={view === "insights" ? "active" : ""} onClick={() => setView("insights")} aria-pressed={view === "insights"}>Insights</button>
             </nav>
           </div>
           {view === "closet" && (
@@ -677,7 +756,9 @@ export function App() {
         </header>
 
         {view === "outfits" ? (
-          <OutfitStudio items={items} />
+          <OutfitStudio items={items} initialMood={feel} />
+        ) : view === "insights" ? (
+          <Insights items={items} />
         ) : (
           <>
             {error && <p className="status error">{error}</p>}
@@ -701,7 +782,16 @@ export function App() {
         )}
       </main>
 
-      {selectedItem && <ItemViewer item={selectedItem} onClose={() => setSelectedId(null)} onSave={saveItem} onDelete={deleteItem} />}
+      {selectedItem && (
+        <ItemViewer
+          item={selectedItem}
+          onClose={() => setSelectedId(null)}
+          onSave={saveItem}
+          onDelete={deleteItem}
+          duplicateName={items.find((item) => item.id === selectedItem.duplicateOf)?.name}
+          onDismissDuplicate={() => dismissDuplicate(selectedItem.id)}
+        />
+      )}
       <WardrobeImportFlow onGarmentApproved={addImportedItem} onModeledApproved={attachImportedModeledImage} />
     </div>
   );

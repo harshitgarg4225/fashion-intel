@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { atomicJson, openAIEdit } from "./import-job-api.mjs";
 import { curateOutfit, buildOutfitImagePrompt } from "./stylist.mjs";
 import { resolveStylistProvider } from "./ai-providers.mjs";
+import { checkImageBudget, initTelemetry, usageToday } from "./telemetry.mjs";
 
 const API_ROOT = "/api/outfits";
 const IMAGE_ROOT = "/api/outfits/images";
@@ -29,10 +31,21 @@ async function body(req, limit = 64 * 1024) {
   catch { throw Object.assign(new Error("Expected a JSON request body"), { status: 400 }); }
 }
 
+const VISUAL_STYLIST_MAX_ITEMS = 20;
+
+function decodeDataUrl(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const match = raw.match(/^data:([^;]+);base64,(.+)$/s);
+  const data = Buffer.from(match?.[2] || raw, "base64");
+  return data.length ? { data, mime: match?.[1] || "image/png" } : null;
+}
+
 export function outfitStudioApi(options = {}) {
   let root;
   let outfitsFile;
   let outfitImagesDir;
+  let inspirationDir;
+  let profileFile;
   let libraryFile;
   let importedDir;
   const running = new Map();
@@ -56,6 +69,11 @@ export function outfitStudioApi(options = {}) {
     records[index] = { ...records[index], ...patch, updatedAt: new Date().toISOString() };
     await atomicJson(outfitsFile, records);
     return records[index];
+  }
+
+  async function loadProfile() {
+    try { return JSON.parse(await readFile(profileFile, "utf8")); }
+    catch (error) { if (error.code === "ENOENT") return { styleNotes: "", hardRules: "" }; throw error; }
   }
 
   function garmentFile(item) {
@@ -129,7 +147,34 @@ export function outfitStudioApi(options = {}) {
           const usedCombinations = records
             .filter((entry) => entry.id !== id && entry.garmentIds?.length >= 2)
             .map((entry) => entry.garmentIds.slice(0, 2).map((garmentId) => byId.get(garmentId)?.name || garmentId));
-          outfit = await curateOutfit({ setting, items: library, direction: record.direction, mood: record.mood, usedCombinations });
+          const available = library.filter((item) => !item.inLaundry);
+          if (!available.some((item) => item.part === "upperbody") || !available.some((item) => item.part === "lowerbody")) {
+            throw new Error("Not enough clean pieces: at least one top and one bottom must be out of the laundry.");
+          }
+          const feedback = records
+            .filter((entry) => entry.id !== id && entry.verdict && entry.garmentIds?.length)
+            .slice(-8)
+            .map((entry) => ({ name: entry.name, verdict: entry.verdict, reason: entry.verdictReason || "", garments: entry.garmentIds.map((garmentId) => byId.get(garmentId)?.name || garmentId) }));
+          const profile = await loadProfile();
+          const visualSetting = setting("WARDROBE_VISUAL_STYLIST", "auto");
+          let itemImages = [];
+          if (visualSetting !== "off" && available.length <= VISUAL_STYLIST_MAX_ITEMS) {
+            try {
+              itemImages = await Promise.all(available.map(async (item) => ({
+                data: await sharp(await readFile(garmentFile(item))).resize(96, 96, { fit: "inside" }).png().toBuffer(),
+                mime: "image/png",
+              })));
+            } catch {
+              itemImages = [];
+            }
+          }
+          let inspirationImage = null;
+          if (record.inspiration) {
+            try {
+              inspirationImage = { data: await readFile(path.join(inspirationDir, `${record.id}.png`)), mime: "image/png" };
+            } catch {}
+          }
+          outfit = await curateOutfit({ setting, items: available, direction: record.direction, mood: record.mood, usedCombinations, feedback, profile, itemImages, inspirationImage });
           await updateOutfit(id, {
             name: outfit.name,
             occasion: outfit.occasion,
@@ -142,6 +187,7 @@ export function outfitStudioApi(options = {}) {
         await updateOutfit(id, { status: "rendering", error: null });
         const key = setting("OPENAI_API_KEY");
         if (!key) throw new Error("OPENAI_API_KEY is not configured");
+        await checkImageBudget(setting);
         const images = [await modelReference(), await garmentReference(outfit.top, "top"), await garmentReference(outfit.bottom, "bottom")];
         if (outfit.outer) images.push(await garmentReference(outfit.outer, "outer"));
         if (outfit.shoes) images.push(await garmentReference(outfit.shoes, "shoes"));
@@ -169,8 +215,24 @@ export function outfitStudioApi(options = {}) {
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith(`${API_ROOT}`)) return next();
+    if (!url.pathname.startsWith(`${API_ROOT}`) && url.pathname !== "/api/profile" && url.pathname !== "/api/usage") return next();
     try {
+      if (url.pathname === "/api/profile" && req.method === "GET") {
+        return json(res, 200, await loadProfile());
+      }
+      if (url.pathname === "/api/profile" && req.method === "PUT") {
+        const input = await body(req);
+        const profile = {
+          styleNotes: typeof input.styleNotes === "string" ? input.styleNotes.trim().slice(0, 2000) : "",
+          hardRules: typeof input.hardRules === "string" ? input.hardRules.trim().slice(0, 2000) : "",
+        };
+        await atomicJson(profileFile, profile);
+        return json(res, 200, profile);
+      }
+      if (url.pathname === "/api/usage" && req.method === "GET") {
+        const budget = Number.parseFloat(setting("WARDROBE_DAILY_BUDGET"));
+        return json(res, 200, { today: await usageToday(), budgetUsd: Number.isFinite(budget) && budget > 0 ? budget : null });
+      }
       if (url.pathname === API_ROOT && req.method === "GET") {
         return json(res, 200, await loadOutfits());
       }
@@ -199,9 +261,10 @@ export function outfitStudioApi(options = {}) {
         if (running.size >= MAX_CONCURRENT_GENERATIONS) {
           return json(res, 429, { error: `Up to ${MAX_CONCURRENT_GENERATIONS} looks can generate at once. Give the current ones a moment to finish.` });
         }
-        const input = await body(req);
+        const input = await body(req, 12 * 1024 * 1024);
         const direction = typeof input.direction === "string" ? input.direction.trim().slice(0, 500) || null : null;
         const mood = typeof input.mood === "string" ? input.mood.trim().slice(0, 120) || null : null;
+        const inspiration = decodeDataUrl(input.inspirationDataUrl);
         const now = new Date().toISOString();
         const record = {
           id: randomUUID(),
@@ -211,20 +274,28 @@ export function outfitStudioApi(options = {}) {
           setting: "",
           mood,
           direction,
+          inspiration: Boolean(inspiration),
           garmentIds: [],
           image: null,
           favorite: false,
+          verdict: null,
+          verdictReason: null,
+          wornAt: [],
           status: "curating",
           error: null,
           createdAt: now,
           updatedAt: now,
         };
+        if (inspiration) {
+          await mkdir(inspirationDir, { recursive: true });
+          await writeFile(path.join(inspirationDir, `${record.id}.png`), await sharp(inspiration.data).rotate().resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).png().toBuffer(), { mode: 0o600 });
+        }
         const records = await loadOutfits();
         await atomicJson(outfitsFile, [...records, record]);
         void generate(record.id);
         return json(res, 202, record);
       }
-      const match = url.pathname.match(/^\/api\/outfits\/([a-f0-9-]{36})(?:\/(retry))?$/i);
+      const match = url.pathname.match(/^\/api\/outfits\/([a-f0-9-]{36})(?:\/(retry|wear))?$/i);
       if (!match) return json(res, 404, { error: "Not found" });
       const records = await loadOutfits();
       const record = records.find((entry) => entry.id === match[1]);
@@ -237,17 +308,26 @@ export function outfitStudioApi(options = {}) {
         void generate(record.id);
         return json(res, 202, updated);
       }
+      if (match[2] === "wear" && req.method === "POST") {
+        const wornAt = [...(record.wornAt || []), new Date().toISOString()];
+        return json(res, 200, await updateOutfit(record.id, { wornAt }));
+      }
       if (!match[2] && req.method === "PATCH") {
         const input = await body(req);
         const patch = {};
         if (typeof input.favorite === "boolean") patch.favorite = input.favorite;
         if (typeof input.name === "string" && input.name.trim()) patch.name = input.name.trim().slice(0, 80);
+        if (input.verdict === null || ["up", "down"].includes(input.verdict)) {
+          patch.verdict = input.verdict;
+          patch.verdictReason = input.verdict && typeof input.verdictReason === "string" ? input.verdictReason.trim().slice(0, 120) || null : null;
+        }
         if (!Object.keys(patch).length) return json(res, 400, { error: "Nothing to update" });
         return json(res, 200, await updateOutfit(record.id, patch));
       }
       if (!match[2] && req.method === "DELETE") {
         await atomicJson(outfitsFile, records.filter((entry) => entry.id !== record.id));
         await rm(path.join(outfitImagesDir, `${record.id}.png`), { force: true });
+        await rm(path.join(inspirationDir, `${record.id}.png`), { force: true });
         return json(res, 200, { deleted: true, id: record.id });
       }
       if (!match[2] && req.method === "GET") return json(res, 200, record);
@@ -266,9 +346,12 @@ export function outfitStudioApi(options = {}) {
       const dataDir = path.resolve(root, setting("WARDROBE_DATA_DIR", "data"));
       outfitsFile = path.join(dataDir, "outfits.json");
       outfitImagesDir = path.join(dataDir, "outfit-images");
+      inspirationDir = path.join(dataDir, "inspiration");
+      profileFile = path.join(dataDir, "profile.json");
       libraryFile = path.join(dataDir, "library.json");
       importedDir = path.join(dataDir, "imported");
       await mkdir(dataDir, { recursive: true });
+      initTelemetry(dataDir);
       const records = await loadOutfits();
       const interrupted = records.filter((record) => ["curating", "rendering"].includes(record.status));
       for (const record of interrupted) {

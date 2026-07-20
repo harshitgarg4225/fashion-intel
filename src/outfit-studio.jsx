@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowCounterClockwise, CloudSun, Heart, Sparkle, SpinnerGap, Trash, WarningCircle } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, ArrowsClockwise, CloudSun, CoatHanger, Heart, ImageSquare, Sparkle, SpinnerGap, ThumbsDown, ThumbsUp, Trash, WarningCircle, X } from "@phosphor-icons/react";
 import { OptimizedImage } from "./OptimizedImage.jsx";
 import "./outfit-studio.css";
 
@@ -16,6 +16,9 @@ const MOODS = [
   { id: "romantic", label: "Romantic" },
   { id: "grounded", label: "Grounded" },
 ];
+
+const OCCASION_PRESETS = ["Interview", "Date night", "Wedding guest", "Office", "Weekend", "Travel day"];
+const DOWNVOTE_REASONS = ["too formal", "too bold", "not my colors", "wrong for weather", "doesn't feel like me"];
 
 async function api(path, options) {
   const response = await fetch(path, {
@@ -60,6 +63,13 @@ function getLocalWeather() {
   });
 }
 
+const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error || new Error("Could not read that image."));
+  reader.readAsDataURL(file);
+});
+
 function statusCopy(outfit) {
   if (outfit.status === "curating") return "Styling the combination";
   if (outfit.status === "rendering") return "Rendering the modeled photo";
@@ -67,9 +77,88 @@ function statusCopy(outfit) {
   return null;
 }
 
-function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite }) {
+function StyleProfilePanel() {
+  const [profile, setProfile] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api("/api/profile").then(setProfile).catch(() => setProfile({ styleNotes: "", hardRules: "" }));
+  }, []);
+
+  if (!profile) return null;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      setProfile(await api("/api/profile", { method: "PUT", body: JSON.stringify(profile) }));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {} finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <details className="style-profile">
+      <summary>Style profile</summary>
+      <p className="stylist-note">The stylist reads this on every look. Notes shape choices; hard rules are never violated.</p>
+      <label>
+        <span>Style notes</span>
+        <textarea rows="2" value={profile.styleNotes} placeholder="e.g. prefers earth tones, loves texture, minimal branding" onChange={(event) => setProfile((current) => ({ ...current, styleNotes: event.target.value }))} />
+      </label>
+      <label>
+        <span>Hard rules</span>
+        <textarea rows="2" value={profile.hardRules} placeholder="e.g. never crop tops, no logos at work, always covered shoulders" onChange={(event) => setProfile((current) => ({ ...current, hardRules: event.target.value }))} />
+      </label>
+      <button type="button" className="outfit-create profile-save" onClick={save} disabled={saving}>{saved ? "Saved" : "Save profile"}</button>
+    </details>
+  );
+}
+
+function VerdictControls({ outfit, onVerdict }) {
+  const [pickingReason, setPickingReason] = useState(false);
+
+  if (pickingReason) {
+    return (
+      <div className="verdict-reasons" role="group" aria-label="Why didn't this work?">
+        {DOWNVOTE_REASONS.map((reason) => (
+          <button key={reason} type="button" onClick={() => { onVerdict("down", reason); setPickingReason(false); }}>{reason}</button>
+        ))}
+        <button type="button" className="verdict-skip" onClick={() => { onVerdict("down", null); setPickingReason(false); }}>skip</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="verdict-row">
+      <button
+        type="button"
+        className={`verdict-button${outfit.verdict === "up" ? " active" : ""}`}
+        onClick={() => onVerdict(outfit.verdict === "up" ? null : "up", null)}
+        aria-pressed={outfit.verdict === "up"}
+        aria-label="This look worked"
+      >
+        <ThumbsUp size={15} weight={outfit.verdict === "up" ? "fill" : "regular"} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={`verdict-button${outfit.verdict === "down" ? " active down" : ""}`}
+        onClick={() => outfit.verdict === "down" ? onVerdict(null, null) : setPickingReason(true)}
+        aria-pressed={outfit.verdict === "down"}
+        aria-label="This look didn't work"
+      >
+        <ThumbsDown size={15} weight={outfit.verdict === "down" ? "fill" : "regular"} aria-hidden="true" />
+      </button>
+      {outfit.verdict === "down" && outfit.verdictReason && <span className="verdict-reason-label">{outfit.verdictReason}</span>}
+    </div>
+  );
+}
+
+function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite, onWear, onVerdict, onVariation }) {
   const active = ACTIVE_STATUSES.has(outfit.status);
   const garments = (outfit.garmentIds || []).map((id) => itemsById.get(id)).filter(Boolean);
+  const wearCount = outfit.wornAt?.length || 0;
 
   return (
     <article className={`outfit-card status-${outfit.status}`}>
@@ -102,10 +191,11 @@ function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite }) 
       <div className="outfit-body">
         <div className="outfit-heading">
           <h3>{outfit.name}</h3>
-          {(outfit.mood || !!outfit.occasion?.length) && (
+          {(outfit.mood || !!outfit.occasion?.length || wearCount > 0) && (
             <div className="occasion-row">
               {outfit.mood && <span className="occasion-chip mood-chip">feels {outfit.mood}</span>}
               {(outfit.occasion || []).map((label) => <span className="occasion-chip" key={label}>{label}</span>)}
+              {wearCount > 0 && <span className="occasion-chip worn-chip">worn {wearCount}×</span>}
             </div>
           )}
         </div>
@@ -119,7 +209,18 @@ function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite }) 
             ))}
           </div>
         )}
+        {outfit.status === "ready" && <VerdictControls outfit={outfit} onVerdict={(verdict, reason) => onVerdict(outfit, verdict, reason)} />}
         <div className="outfit-actions">
+          {outfit.status === "ready" && (
+            <>
+              <button type="button" className="outfit-wear" onClick={() => onWear(outfit.id)}>
+                <CoatHanger size={14} aria-hidden="true" /> Wear it
+              </button>
+              <button type="button" className="outfit-retry" onClick={() => onVariation(outfit)}>
+                <ArrowsClockwise size={14} aria-hidden="true" /> Another take
+              </button>
+            </>
+          )}
           {outfit.status === "failed" && (
             <button type="button" className="outfit-retry" onClick={() => onRetry(outfit.id)}>
               <ArrowCounterClockwise size={14} aria-hidden="true" /> Retry
@@ -135,18 +236,21 @@ function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite }) 
   );
 }
 
-export function OutfitStudio({ items }) {
+export function OutfitStudio({ items, initialMood = null }) {
   const [outfits, setOutfits] = useState([]);
   const [config, setConfig] = useState(null);
-  const [mood, setMood] = useState(null);
+  const [usage, setUsage] = useState(null);
+  const [mood, setMood] = useState(initialMood);
   const [customMood, setCustomMood] = useState("");
   const [context, setContext] = useState("");
   const [weather, setWeather] = useState(null);
   const [weatherBusy, setWeatherBusy] = useState(false);
+  const [inspiration, setInspiration] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const pollRef = useRef(null);
+  const inspirationInputRef = useRef(null);
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const hasActive = outfits.some((outfit) => ACTIVE_STATUSES.has(outfit.status));
@@ -154,9 +258,10 @@ export function OutfitStudio({ items }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [loadedOutfits, loadedConfig] = await Promise.all([api(API), api(`${API}/config`)]);
+      const [loadedOutfits, loadedConfig, loadedUsage] = await Promise.all([api(API), api(`${API}/config`), api("/api/usage").catch(() => null)]);
       setOutfits(loadedOutfits);
       setConfig(loadedConfig);
+      setUsage(loadedUsage);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -185,16 +290,34 @@ export function OutfitStudio({ items }) {
     }
   };
 
-  const createOutfit = async () => {
+  const pickInspiration = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    try {
+      setInspiration({ name: file.name, dataUrl: await fileToDataUrl(file) });
+    } catch (readError) {
+      setError(readError.message);
+    }
+  };
+
+  const createLook = async ({ lookMood = chosenMood, lookDirection = null, count = 1 } = {}) => {
     setCreating(true);
     setError("");
     try {
-      const direction = [context.trim(), weather ? `today's weather is ${weather}` : ""].filter(Boolean).join("; ");
-      const record = await api(API, {
-        method: "POST",
-        body: JSON.stringify({ mood: chosenMood || undefined, direction: direction || undefined }),
-      });
-      setOutfits((current) => [...current, record]);
+      const direction = lookDirection ?? [context.trim(), weather ? `today's weather is ${weather}` : ""].filter(Boolean).join("; ");
+      for (let index = 0; index < count; index += 1) {
+        const record = await api(API, {
+          method: "POST",
+          body: JSON.stringify({
+            mood: lookMood || undefined,
+            direction: direction || undefined,
+            inspirationDataUrl: index === 0 ? inspiration?.dataUrl : undefined,
+          }),
+        });
+        setOutfits((current) => [...current, record]);
+      }
+      if (inspiration) setInspiration(null);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -222,11 +345,21 @@ export function OutfitStudio({ items }) {
     }
   };
 
-  const toggleFavorite = async (outfit) => {
+  const patchOutfit = async (id, patch) => {
     setError("");
     try {
-      const record = await api(`${API}/${outfit.id}`, { method: "PATCH", body: JSON.stringify({ favorite: !outfit.favorite }) });
-      setOutfits((current) => current.map((entry) => entry.id === outfit.id ? record : entry));
+      const record = await api(`${API}/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      setOutfits((current) => current.map((entry) => entry.id === id ? record : entry));
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const wearOutfit = async (id) => {
+    setError("");
+    try {
+      const record = await api(`${API}/${id}/wear`, { method: "POST" });
+      setOutfits((current) => current.map((entry) => entry.id === id ? record : entry));
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -237,7 +370,7 @@ export function OutfitStudio({ items }) {
     const missing = [
       !config.hasOpenAIKey && "add OPENAI_API_KEY to .env",
       !config.hasStylistKey && `add an API key for the ${config.stylistProvider} stylist`,
-      !config.hasModelReference && "add a PNG photo of yourself at data/model-reference.png",
+      !config.hasModelReference && "add your reference photo (the import tray can capture one)",
       (!config.tops || !config.bottoms) && "import at least one top and one bottom",
     ].filter(Boolean);
     return `To generate outfits, ${missing.join(", ")}.`;
@@ -282,19 +415,36 @@ export function OutfitStudio({ items }) {
             aria-label="Occasion or constraints"
           />
         </div>
+        <div className="occasion-presets" role="group" aria-label="Occasion presets">
+          {OCCASION_PRESETS.map((preset) => (
+            <button key={preset} type="button" className={`preset-chip${context === preset ? " active" : ""}`} onClick={() => setContext((current) => current === preset ? "" : preset)}>{preset}</button>
+          ))}
+        </div>
         <div className="mood-actions">
           <button type="button" className={`weather-toggle${weather ? " active" : ""}`} onClick={toggleWeather} disabled={weatherBusy} aria-pressed={Boolean(weather)}>
             {weatherBusy ? <SpinnerGap className="spin" size={15} aria-hidden="true" /> : <CloudSun size={15} aria-hidden="true" />}
             {weather ? `Dressing for ${weather}` : "Use my weather"}
           </button>
-          <button type="button" className="outfit-create" onClick={createOutfit} disabled={creating || (config && !config.ready)}>
+          <button type="button" className={`weather-toggle${inspiration ? " active" : ""}`} onClick={() => inspiration ? setInspiration(null) : inspirationInputRef.current?.click()}>
+            {inspiration ? <X size={15} aria-hidden="true" /> : <ImageSquare size={15} aria-hidden="true" />}
+            {inspiration ? `Inspired by ${inspiration.name.slice(0, 18)}` : "Inspiration photo"}
+          </button>
+          <input ref={inspirationInputRef} type="file" accept="image/*" hidden onChange={pickInspiration} />
+          <button type="button" className="outfit-create" onClick={() => createLook()} disabled={creating || (config && !config.ready)}>
             {creating ? <SpinnerGap className="spin" size={15} aria-hidden="true" /> : <Sparkle size={15} aria-hidden="true" />}
             {chosenMood ? `Dress me ${customMood.trim() ? "for that" : chosenMood}` : "Surprise me"}
           </button>
+          <button type="button" className="weather-toggle" onClick={() => createLook({ count: 3 })} disabled={creating || hasActive || (config && !config.ready)} title="Generate three candidate looks to choose from">
+            3 options
+          </button>
         </div>
         {config?.stylistProvider && (
-          <p className="stylist-note">Stylist runs on {config.stylistProvider === "anthropic" ? "Claude" : "OpenAI"}; photos render with gpt-image. Weather stays on your device except the line added to your request.</p>
+          <p className="stylist-note">
+            Stylist runs on {config.stylistProvider === "anthropic" ? "Claude" : "OpenAI"}; photos render with gpt-image.
+            {usage?.today && ` Today: ${usage.today.imageCalls} renders, ≈$${usage.today.estCostUsd.toFixed(2)}${usage.budgetUsd ? ` of $${usage.budgetUsd.toFixed(2)} budget` : ""}.`}
+          </p>
         )}
+        <StyleProfilePanel />
       </div>
 
       {setupMessage && <p className="status">{setupMessage}</p>}
@@ -313,7 +463,10 @@ export function OutfitStudio({ items }) {
               itemsById={itemsById}
               onRetry={retryOutfit}
               onDelete={deleteOutfit}
-              onToggleFavorite={toggleFavorite}
+              onToggleFavorite={(entry) => patchOutfit(entry.id, { favorite: !entry.favorite })}
+              onWear={wearOutfit}
+              onVerdict={(entry, verdict, reason) => patchOutfit(entry.id, { verdict, verdictReason: reason })}
+              onVariation={(entry) => createLook({ lookMood: entry.mood, lookDirection: entry.direction || "", count: 1 })}
             />
           ))}
         </div>

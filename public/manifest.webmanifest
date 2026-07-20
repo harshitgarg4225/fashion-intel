@@ -14,5 +14,19 @@
       "type": "image/svg+xml",
       "purpose": "any"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dress me",
+      "short_name": "Dress me",
+      "description": "Pick a feeling and get dressed from your closet",
+      "url": "/?view=outfits"
+    },
+    {
+      "name": "Insights",
+      "short_name": "Insights",
+      "description": "Wardrobe analytics",
+      "url": "/?view=insights"
+    }
   ]
 }

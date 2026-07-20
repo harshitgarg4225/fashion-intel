@@ -1,3 +1,5 @@
+import { audit, recordUsage } from "./telemetry.mjs";
+
 const ANTHROPIC_VERSION = "2023-06-01";
 
 export function resolveStylistProvider(setting) {
@@ -28,7 +30,7 @@ async function openAIStructured({ key, baseUrl, model, prompt, images = [], sche
   return JSON.parse(outputText);
 }
 
-function looseSchema(schema) {
+export function looseSchema(schema) {
   if (Array.isArray(schema)) return schema.map(looseSchema);
   if (!schema || typeof schema !== "object") return schema;
   const copy = {};
@@ -64,6 +66,8 @@ async function anthropicStructured({ key, baseUrl, model, prompt, images = [], s
 
 export async function structuredAnalysis({ setting, prompt, images = [], schema, schemaName }) {
   const provider = resolveStylistProvider(setting);
+  void audit({ type: "vision", provider, schema: schemaName, images: images.length });
+  void recordUsage("vision");
   if (provider === "anthropic") {
     const key = setting("ANTHROPIC_API_KEY").trim();
     if (!key) throw new Error("ANTHROPIC_API_KEY is not configured");

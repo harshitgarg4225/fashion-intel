@@ -1018,3 +1018,78 @@ button { font: inherit; }
 
   .wardrobe-search { min-width: 0; flex: 1 1 100%; }
 }
+
+/* Item flags, price, laundry, duplicates */
+
+.gallery-item { position: relative; }
+
+.item-flag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 7px;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: var(--paper);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.item-flag.laundry-flag {
+  top: auto;
+  bottom: 8px;
+  border-color: var(--muted);
+  color: var(--muted);
+}
+
+.item-flags-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+}
+
+.price-field { flex: 0 0 110px; }
+
+.price-field input {
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  width: 100%;
+}
+
+.laundry-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  padding-bottom: 10px;
+}
+
+.laundry-toggle input { accent-color: var(--accent); }
+
+.duplicate-notice {
+  margin: 0;
+  border-left: 3px solid var(--accent);
+  padding: 8px 12px;
+  font-size: 13px;
+  background: rgba(110, 48, 46, .06);
+}
+
+.duplicate-notice button {
+  margin-left: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}

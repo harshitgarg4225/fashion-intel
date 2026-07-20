@@ -335,3 +335,156 @@
   .mood-inputs { flex-direction: column; }
   .mood-actions { flex-wrap: wrap; }
 }
+
+/* Occasion presets, verdicts, wear, profile */
+
+.occasion-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.preset-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.preset-chip:hover { color: var(--ink); border-color: var(--ink); }
+
+.preset-chip.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.verdict-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.verdict-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.verdict-button:hover { color: var(--ink); border-color: var(--ink); }
+
+.verdict-button.active { color: #2c6e31; border-color: #2c6e31; }
+
+.verdict-button.active.down { color: var(--accent); border-color: var(--accent); }
+
+.verdict-reason-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.verdict-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.verdict-reasons button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.verdict-reasons button:hover { color: var(--ink); border-color: var(--ink); }
+
+.verdict-reasons .verdict-skip { border-style: dashed; }
+
+.outfit-wear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 6px 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.outfit-wear:hover { color: var(--accent); }
+
+.worn-chip {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.style-profile {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.style-profile summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 520;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.style-profile summary:hover { color: var(--ink); }
+
+.style-profile label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.style-profile label span {
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.style-profile textarea {
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  resize: vertical;
+}
+
+.style-profile textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.profile-save {
+  margin-top: 12px;
+  padding: 9px 16px;
+}

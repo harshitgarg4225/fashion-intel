@@ -368,3 +368,24 @@
 @media (max-width: 560px) {
   .import-folder-row { flex-direction: column; }
 }
+
+/* Reference photo capture */
+
+.reference-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  text-align: center;
+}
+
+.reference-capture h3 { margin: 0; font-size: 17px; }
+
+.reference-capture p { margin: 0; font-size: 13px; color: var(--muted); max-width: 46ch; line-height: 1.5; }
+
+.reference-video {
+  width: 100%;
+  max-width: 360px;
+  border: 1px solid var(--line);
+  transform: scaleX(-1);
+}

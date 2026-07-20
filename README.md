@@ -11,10 +11,12 @@ Your wardrobe, digitized and styled with AI.
 
 Fashion Intel turns photos of your clothes into an organized digital closet, then dresses you from it — starting from how you want to *feel*.
 
-- **"How do you want to feel today?"** — pick a feeling (confident, cozy, bold, effortless…) or describe it in your own words, add an occasion and one-tap local weather, and the stylist curates a complete look from your real closet, explains why it works, and renders a lookbook photo of *you* wearing it.
+- **"How do you want to feel today?"** — pick a feeling (confident, cozy, bold, effortless…) or describe it in your own words, add an occasion preset and one-tap local weather — or attach an inspiration photo — and the stylist curates a complete look from your real closet, explains why it works, and renders a lookbook photo of *you* wearing it. Ask for **3 options**, get **another take**, tap **Wear it** when you walk out the door, and 👍/👎 with a reason — the stylist learns from every verdict, your **style profile** (notes + hard rules), and the garment photos themselves.
 - **Import from anywhere** — drop, paste, or upload photos; pick photos straight from **Google Photos** (official Picker API); or point it at a **local folder** (export an Apple Photos album to a folder and import it in one go). AI vision detects every garment, extracts a clean product cutout, and models each piece on you.
 - **Only *your* clothes** — with your reference photo in place, the face filter keeps garments worn by you (or shown unworn) and skips friends, mannequins, and store photos automatically.
-- **Closet** — browse by category, search by name/tag/category, see per-category counts and your wardrobe's dominant color palette. Favorite the looks that worked.
+- **Closet** — browse by category, search by name/tag/category, see per-category counts and your wardrobe's dominant color palette. Mark pieces as in-the-laundry (the stylist skips them), add prices, and get flagged when an import looks like a duplicate you already own.
+- **Insights** — most-worn and never-worn pieces, cost-per-wear, color balance, category bars, and gap advice ("one more bottom unlocks 14 new pairings"), all computed from your own wear history.
+- **Trust built in** — a local audit log of every AI call, a daily cost meter with an optional hard budget (`WARDROBE_DAILY_BUDGET`), and `npm run backup` / `backup:wipe` to export or erase everything. First run captures your reference photo in-app via webcam or upload.
 
 Everything stays local: originals, cutouts, renders, outfits, and the JSON database live in `data/` on your machine. See [ROADMAP.md](ROADMAP.md) for the full product plan.
 
@@ -80,6 +82,8 @@ Every generation step is reviewable: approve, reject, or regenerate with a corre
 | `WARDROBE_MODEL_REFERENCE` | `data/model-reference.png` | Your reference photo |
 | `WARDROBE_DATA_DIR` | `data` | Local storage location |
 | `WARDROBE_HOST` | `127.0.0.1` | Set `0.0.0.0` to expose on your LAN (trusted networks only) |
+| `WARDROBE_DAILY_BUDGET` | off | Hard-stop image generation past this estimated daily spend (USD) |
+| `WARDROBE_VISUAL_STYLIST` | `auto` | Send garment thumbnails to the stylist: `auto` (≤20 pieces), `on`, `off` |
 
 ## Security posture
 

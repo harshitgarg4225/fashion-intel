@@ -3,6 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 
 import path from "node:path";
 import sharp from "sharp";
 import { structuredAnalysis } from "./ai-providers.mjs";
+import { audit, checkImageBudget, initTelemetry, recordUsage } from "./telemetry.mjs";
 
 const API_ROOT = "/api/import/jobs";
 const ASSET_ROOT = "/api/import/assets";
@@ -318,7 +319,49 @@ export async function openAIEdit({ key, baseUrl, model, prompt, images, size, ba
   if (!response.ok) throw new Error(result.error?.message || `OpenAI image request failed (${response.status})`);
   const encoded = result.data?.[0]?.b64_json;
   if (!encoded) throw new Error("OpenAI response did not contain image data");
+  void audit({ type: "image", model, size });
+  void recordUsage("image");
   return Buffer.from(encoded, "base64");
+}
+
+// 16 hex chars of 8x8 luminance structure + 3 hex chars of quantized mean color.
+// Structure alone cannot distinguish two solid-color garments, so the color
+// component is required for duplicate detection to be meaningful.
+export async function imageHash(bytes) {
+  const { data } = await sharp(bytes)
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .resize(8, 8, { fit: "fill" })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const luma = [];
+  const mean = { r: 0, g: 0, b: 0 };
+  for (let index = 0; index < data.length; index += 3) {
+    luma.push(0.299 * data[index] + 0.587 * data[index + 1] + 0.114 * data[index + 2]);
+    mean.r += data[index]; mean.g += data[index + 1]; mean.b += data[index + 2];
+  }
+  const lumaMean = luma.reduce((total, value) => total + value, 0) / luma.length;
+  let hash = "";
+  for (let index = 0; index < 64; index += 4) {
+    let nibble = 0;
+    for (let bit = 0; bit < 4; bit += 1) if (luma[index + bit] > lumaMean) nibble |= 1 << (3 - bit);
+    hash += nibble.toString(16);
+  }
+  for (const channel of ["r", "g", "b"]) hash += Math.min(15, Math.round(mean[channel] / luma.length / 16)).toString(16);
+  return hash;
+}
+
+export function hashDistance(a, b) {
+  if (!a || !b || a.length !== b.length || a.length < 4) return 64;
+  let distance = 0;
+  for (let index = 0; index < a.length - 3; index += 1) {
+    let xor = Number.parseInt(a[index], 16) ^ Number.parseInt(b[index], 16);
+    while (xor) { distance += xor & 1; xor >>= 1; }
+  }
+  for (let index = a.length - 3; index < a.length; index += 1) {
+    distance += 2 * Math.min(8, Math.abs(Number.parseInt(a[index], 16) - Number.parseInt(b[index], 16)));
+  }
+  return distance;
 }
 
 const DETECTION_SCHEMA = { type: "object", additionalProperties: false, properties: { items: { type: "array", minItems: 0, maxItems: 8, items: { type: "object", additionalProperties: false, properties: { name: { type: "string" }, part: { type: "string", enum: ["upperbody", "wholebody_up", "lowerbody", "accessories_up", "shoes"] }, color: { type: "string", pattern: "^#[0-9A-Fa-f]{6}$" }, secondaryColor: { anyOf: [{ type: "string", pattern: "^#[0-9A-Fa-f]{6}$" }, { type: "null" }] }, tags: { type: "array", items: { type: "string" }, maxItems: 4 }, boundingBox: { type: "object", additionalProperties: false, properties: { x: { type: "integer", minimum: 0, maximum: 999 }, y: { type: "integer", minimum: 0, maximum: 999 }, width: { type: "integer", minimum: 1, maximum: 1000 }, height: { type: "integer", minimum: 1, maximum: 1000 } }, required: ["x", "y", "width", "height"] } }, required: ["name", "part", "color", "secondaryColor", "tags", "boundingBox"] } } }, required: ["items"] };
@@ -431,6 +474,13 @@ export function wardrobeImportApi(options = {}) {
     const metadata = job.metadata || {};
     const records = await loadImported();
     const existing = records.find((record) => record.id === id);
+    let hash = existing?.hash || null;
+    let duplicateOf = existing?.duplicateOf || null;
+    try {
+      hash = await imageHash(await readFile(path.join(libraryAssetDir, garmentName)));
+      const match = records.find((record) => record.id !== id && record.hash && hashDistance(record.hash, hash) <= 6);
+      duplicateOf = match ? match.id : null;
+    } catch {}
     const record = {
       id,
       name: metadata.name || "New piece",
@@ -442,6 +492,10 @@ export function wardrobeImportApi(options = {}) {
       image: `${LIBRARY_ASSET_ROOT}/${garmentName}`,
       thumbnail: `${LIBRARY_ASSET_ROOT}/${garmentName}`,
       modeledImage: modeledImage || existing?.modeledImage || null,
+      price: existing?.price ?? null,
+      inLaundry: existing?.inLaundry ?? false,
+      hash,
+      duplicateOf,
       importJobId: job.id,
     };
     const next = [...records.filter((item) => item.id !== id), record];
@@ -464,6 +518,7 @@ export function wardrobeImportApi(options = {}) {
         const output = path.join(dir, `${stageName}-${stage.attempts}.png`);
         const key = setting("OPENAI_API_KEY");
         if (!key) throw new Error("OPENAI_API_KEY is not configured");
+        await checkImageBudget(setting);
         const sourceFile = stageName === "garment" && current.internal.cropFile ? current.internal.cropFile : current.internal.originalFile;
         const original = { data: await readFile(path.join(dir, sourceFile)), mime: "image/png", name: sourceFile };
         let bytes;
@@ -517,7 +572,7 @@ export function wardrobeImportApi(options = {}) {
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith("/api/import/")) return next();
+    if (!url.pathname.startsWith("/api/import/") && url.pathname !== "/api/setup/reference") return next();
     try {
       if (url.pathname === "/api/import/wardrobe" && req.method === "GET") {
         return json(res, 200, await loadImported());
@@ -526,6 +581,37 @@ export function wardrobeImportApi(options = {}) {
         return json(res, 200, await setupStatus());
       }
       const wardrobeDeleteMatch = url.pathname.match(/^\/api\/import\/wardrobe\/(import-[a-f0-9-]{36})$/i);
+      if (wardrobeDeleteMatch && req.method === "PATCH") {
+        const id = wardrobeDeleteMatch[1];
+        const records = await loadImported();
+        const index = records.findIndex((record) => record.id === id);
+        if (index === -1) return json(res, 404, { error: "Imported wardrobe item not found" });
+        const input = await body(req);
+        const record = { ...records[index] };
+        if (typeof input.name === "string") record.name = input.name.trim().slice(0, 120) || record.name;
+        if (PARTS.has(input.part)) record.part = input.part;
+        if (typeof input.color === "string" && HEX_COLOR.test(input.color)) record.color = input.color.toLowerCase();
+        if (input.secondaryColor === null) record.secondaryColor = null;
+        else if (typeof input.secondaryColor === "string" && HEX_COLOR.test(input.secondaryColor)) record.secondaryColor = input.secondaryColor.toLowerCase();
+        if (Array.isArray(input.tags)) record.tags = input.tags.filter((tag) => typeof tag === "string").map((tag) => tag.trim().toLowerCase().slice(0, 40)).filter(Boolean).slice(0, 12);
+        if (input.price === null) record.price = null;
+        else if (Number.isFinite(Number(input.price)) && Number(input.price) >= 0) record.price = Math.round(Number(input.price) * 100) / 100;
+        if (typeof input.inLaundry === "boolean") record.inLaundry = input.inLaundry;
+        if (input.duplicateOf === null) record.duplicateOf = null;
+        record.palette = [record.color, record.secondaryColor].filter(Boolean);
+        records[index] = record;
+        await atomicJson(importedFile, records);
+        return json(res, 200, record);
+      }
+      if (url.pathname === "/api/setup/reference" && req.method === "POST") {
+        const input = await body(req);
+        const image = decodeImage(input);
+        const normalized = await normalizeImage(image.data);
+        const referencePath = path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png"));
+        await mkdir(path.dirname(referencePath), { recursive: true });
+        await writeFile(referencePath, normalized, { mode: 0o600 });
+        return json(res, 200, await setupStatus());
+      }
       if (wardrobeDeleteMatch && req.method === "DELETE") {
         const id = wardrobeDeleteMatch[1];
         const records = await loadImported();
@@ -714,6 +800,7 @@ export function wardrobeImportApi(options = {}) {
       libraryAssetDir = path.join(dataDir, "imported");
       await mkdir(jobsDir, { recursive: true });
       await mkdir(libraryAssetDir, { recursive: true });
+      initTelemetry(dataDir);
       if (options.bridge) {
         options.bridge.createJobsFromImage = createJobsFromImage;
         options.bridge.setupStatus = setupStatus;

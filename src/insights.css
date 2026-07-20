@@ -1,0 +1,156 @@
+.insights {
+  padding: 40px 56px 96px;
+  max-width: 1040px;
+}
+
+.insight-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.insight-tile {
+  border: 1px solid var(--line);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.insight-tile strong {
+  font-size: 28px;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.insight-tile span {
+  font-size: 12px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.insight-advice {
+  margin: 24px 0 0;
+  border-left: 3px solid var(--accent);
+  padding: 10px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: rgba(110, 48, 46, .06);
+}
+
+.insight-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  margin-top: 36px;
+}
+
+.insight-block h3 {
+  margin: 26px 0 14px;
+  font-size: 13px;
+  font-weight: 560;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.insight-block h3:first-child { margin-top: 0; }
+
+.insight-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.insight-bar-label {
+  flex: 0 0 90px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.insight-bar-track {
+  flex: 1;
+  height: 10px;
+  background: rgba(25, 25, 25, .06);
+}
+
+.insight-bar {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+}
+
+.insight-bar-count {
+  flex: 0 0 28px;
+  text-align: right;
+  font-size: 13px;
+}
+
+.insight-palette {
+  display: flex;
+  height: 22px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.insight-palette span {
+  flex-basis: 0;
+  min-width: 6px;
+}
+
+.insight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.insight-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.insight-thumb {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .6);
+}
+
+.insight-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.insight-item-name {
+  flex: 1;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insight-item-value {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.insight-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+  .insights { padding: 32px 24px 96px; }
+  .insight-columns { grid-template-columns: 1fr; }
+}
