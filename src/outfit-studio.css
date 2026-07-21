@@ -504,3 +504,111 @@
 }
 
 .outfit-swap:hover { color: var(--ink); }
+
+/* ============ Luxury theme layer ============ */
+
+.outfit-studio { animation: lux-rise 600ms 80ms var(--ease-lux) both; }
+
+.mood-composer { max-width: 780px; margin: 0 auto; text-align: center; }
+
+.mood-question {
+  font-family: var(--serif);
+  font-size: clamp(30px, 3.6vw, 44px);
+  font-weight: 540;
+  font-style: italic;
+  letter-spacing: .01em;
+  margin-bottom: 26px;
+}
+
+.mood-chips { justify-content: center; }
+
+.mood-chip-button {
+  border-color: var(--line);
+  padding: 9px 20px;
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  transition: all 350ms var(--ease-lux);
+}
+
+.mood-chip-button.active { background: var(--ink); border-color: var(--ink); }
+
+.mood-chip-button:hover:not(.active) { border-color: var(--accent); color: var(--ink); }
+
+.occasion-presets { justify-content: center; }
+
+.preset-chip { letter-spacing: .1em; text-transform: uppercase; font-size: 11px; }
+.preset-chip:hover { border-color: var(--accent); }
+
+.mood-actions { justify-content: center; flex-wrap: wrap; }
+
+.outfit-create {
+  letter-spacing: .18em;
+  padding: 13px 26px;
+  transition: background-color 350ms var(--ease-lux), border-color 350ms var(--ease-lux), opacity 350ms var(--ease-lux);
+}
+
+.outfit-create:not(:disabled):hover { background: var(--accent); border-color: var(--accent); opacity: 1; }
+
+.weather-toggle { letter-spacing: .14em; transition: all 350ms var(--ease-lux); }
+.weather-toggle:hover:not(:disabled) { border-color: var(--accent); }
+.weather-toggle.active { border-color: var(--accent); color: var(--accent); }
+
+.stylist-note { text-align: center; }
+
+.style-profile { text-align: left; max-width: 640px; margin: 22px auto 0; }
+.style-profile summary { letter-spacing: .18em; }
+
+/* Lookbook cards: gallery discipline */
+
+.outfit-grid { margin-top: 56px; gap: 44px 32px; }
+
+.outfit-card {
+  border: 0;
+  background: transparent;
+}
+
+.outfit-photo {
+  border: 1px solid var(--line);
+  background: #fdfcf9;
+  transition: border-color 350ms var(--ease-lux);
+}
+
+.outfit-card:hover .outfit-photo { border-color: var(--accent); }
+
+.outfit-photo img { transition: transform 800ms var(--ease-lux); }
+
+.outfit-card:hover .outfit-photo img { transform: scale(1.03); }
+
+.outfit-body { padding: 16px 2px 0; gap: 10px; }
+
+.outfit-heading h3 {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 560;
+}
+
+.occasion-chip {
+  border-radius: 0;
+  letter-spacing: .16em;
+  font-size: 10px;
+  padding: 4px 10px;
+}
+
+.occasion-chip.mood-chip { border-color: var(--accent); color: var(--accent); }
+
+.outfit-reason { font-size: 13.5px; line-height: 1.6; }
+
+.outfit-favorite { background: rgba(248, 245, 239, .92); }
+.outfit-favorite.is-favorite, .outfit-favorite:hover { color: var(--accent); }
+
+.outfit-wear:hover { color: var(--accent); }
+.outfit-retry { color: var(--accent); }
+.verdict-button.active { color: var(--accent); border-color: var(--accent); }
+.verdict-button.active.down { color: var(--danger); border-color: var(--danger); }
+.outfit-placeholder.failed { color: var(--danger); }
+
+.style-profile summary { list-style: none; cursor: pointer; }
+.style-profile summary::-webkit-details-marker { display: none; }
+.style-profile summary::before { content: "+"; margin-right: 8px; color: var(--accent); }
+.style-profile[open] summary::before { content: "–"; }

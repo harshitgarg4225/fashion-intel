@@ -389,3 +389,11 @@
   border: 1px solid var(--line);
   transform: scaleX(-1);
 }
+
+/* ============ Luxury theme layer ============ */
+
+.import-popover__title { font-family: var(--serif); font-weight: 560; letter-spacing: .02em; }
+.import-popover__eyebrow { letter-spacing: .24em; color: var(--accent); }
+.import-button--primary { transition: background-color 350ms var(--ease-lux); }
+.import-button--primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+.reference-capture h3, .keys-panel h3 { font-family: var(--serif); font-weight: 560; font-size: 20px; }

@@ -217,15 +217,21 @@ function GalleryItem({ item, selected, onOpen }) {
       aria-pressed={selected}
       data-testid={`wardrobe-item-${item.id}`}
     >
-      <OptimizedImage
-        src={item.thumbnail || item.image}
-        alt=""
-        sizes="(max-width: 520px) calc(50vw - 16px), (max-width: 860px) calc(33vw - 18px), 180px"
-        breakpoints={[120, 180, 240, 320, 480]}
-      />
-      {item.duplicateOf && <span className="item-flag dup-flag" title="Possible duplicate">dup?</span>}
-      {item.wishlist && <span className="item-flag wishlist-flag" title="Wishlist item">wish</span>}
-      {item.inLaundry && <span className="item-flag laundry-flag" title="In the laundry">wash</span>}
+      <span className="tile-frame">
+        <OptimizedImage
+          src={item.thumbnail || item.image}
+          alt=""
+          sizes="(max-width: 520px) calc(50vw - 16px), (max-width: 860px) calc(33vw - 18px), 180px"
+          breakpoints={[120, 180, 240, 320, 480]}
+        />
+        {item.duplicateOf && <span className="item-flag dup-flag" title="Possible duplicate">dup?</span>}
+        {item.wishlist && <span className="item-flag wishlist-flag" title="Wishlist item">wish</span>}
+        {item.inLaundry && <span className="item-flag laundry-flag" title="In the laundry">wash</span>}
+      </span>
+      <span className="tile-caption">
+        <strong>{item.name || type}</strong>
+        <small>{TYPE_MAP[item.part]?.singular || "Piece"}</small>
+      </span>
     </button>
   );
 }
@@ -793,15 +799,21 @@ export function App() {
   return (
     <div className={`app-shell${selectedItem ? " has-selection" : ""}`}>
       <main className="gallery-pane">
+        <header className="masthead">
+          <p className="masthead-eyebrow">Your closet, styled by feeling</p>
+          <h1 className="wordmark">Fashion Intel</h1>
+          <nav className="view-switch" aria-label="Choose view">
+            <button type="button" className={view === "closet" ? "active" : ""} onClick={() => setView("closet")} aria-pressed={view === "closet"}>Closet</button>
+            <button type="button" className={view === "outfits" ? "active" : ""} onClick={() => setView("outfits")} aria-pressed={view === "outfits"}>Outfit Studio</button>
+            <button type="button" className={view === "insights" ? "active" : ""} onClick={() => setView("insights")} aria-pressed={view === "insights"}>Insights</button>
+          </nav>
+        </header>
         <header className="gallery-header">
-          <div className="gallery-meta-row">
-            <p className="piece-count">{items.length} {items.length === 1 ? "piece" : "pieces"}</p>
-            <nav className="view-switch" aria-label="Choose view">
-              <button type="button" className={view === "closet" ? "active" : ""} onClick={() => setView("closet")} aria-pressed={view === "closet"}>Closet</button>
-              <button type="button" className={view === "outfits" ? "active" : ""} onClick={() => setView("outfits")} aria-pressed={view === "outfits"}>Outfit Studio</button>
-              <button type="button" className={view === "insights" ? "active" : ""} onClick={() => setView("insights")} aria-pressed={view === "insights"}>Insights</button>
-            </nav>
-          </div>
+          {view === "closet" && (
+            <div className="gallery-meta-row">
+              <p className="piece-count">{items.length} {items.length === 1 ? "piece" : "pieces"}</p>
+            </div>
+          )}
           {view === "closet" && (
             <>
               <nav className="category-nav" aria-label="Filter wardrobe by item type">
@@ -847,7 +859,11 @@ export function App() {
         ) : (
           <>
             {error && <p className="status error">{error}</p>}
-            {!error && loading && <p className="status">Loading wardrobe</p>}
+            {!error && loading && (
+              <section className="gallery-grid" aria-label="Loading wardrobe" aria-busy="true">
+                {Array.from({ length: 10 }, (_, index) => <div className="skeleton-tile" key={index} />)}
+              </section>
+            )}
             {!error && !loading && !items.length && <p className="status empty">Drop, paste, or add a photo to import your first piece.</p>}
             {!error && !loading && !!items.length && !visibleItems.length && <p className="status empty">No pieces match that search.</p>}
 
