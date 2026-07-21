@@ -16,6 +16,7 @@ Fashion Intel turns photos of your clothes into an organized digital closet, the
 - **Only *your* clothes** — with your reference photo in place, the face filter keeps garments worn by you (or shown unworn) and skips friends, mannequins, and store photos automatically.
 - **Closet** — browse by category, search by name/tag/category, see per-category counts and your wardrobe's dominant color palette. Mark pieces as in-the-laundry (the stylist skips them), add prices, and get flagged when an import looks like a duplicate you already own.
 - **Insights** — most-worn and never-worn pieces, cost-per-wear, color balance, category bars, and gap advice ("one more bottom unlocks 14 new pairings"), all computed from your own wear history.
+- **Journal** — your week in looks: what you actually wore, day by day, with a one-tap **weekly collage** — a shareable editorial card of the week (looks, days dressed, most-worn piece, the feelings you chose).
 - **Trust built in** — a local audit log of every AI call, a daily cost meter with an optional hard budget (`WARDROBE_DAILY_BUDGET`), and `npm run backup` / `backup:wipe` to export or erase everything. First run captures your reference photo in-app via webcam or upload.
 
 Everything stays local: originals, cutouts, renders, outfits, and the JSON database live in `data/` on your machine. See [ROADMAP.md](ROADMAP.md) for the full product plan.

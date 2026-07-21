@@ -50,6 +50,9 @@ export function authApi(options = {}) {
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
+    if (url.pathname === "/api/health" && req.method === "GET") {
+      return json(res, 200, { ok: true });
+    }
     const required = Boolean(passphrase());
     if (url.pathname === "/api/auth/status" && req.method === "GET") {
       const authed = !required || safeEqual(cookieValue(req), sessionTokenFor(passphrase()));

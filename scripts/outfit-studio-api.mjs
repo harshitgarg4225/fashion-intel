@@ -235,7 +235,7 @@ export function outfitStudioApi(options = {}) {
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith(`${API_ROOT}`) && url.pathname !== "/api/profile" && url.pathname !== "/api/usage" && url.pathname !== "/api/capsule") return next();
+    if (!url.pathname.startsWith(`${API_ROOT}`) && !url.pathname.startsWith("/api/review") && url.pathname !== "/api/profile" && url.pathname !== "/api/usage" && url.pathname !== "/api/capsule") return next();
     try {
       if (url.pathname === "/api/profile" && req.method === "GET") {
         return json(res, 200, await loadProfile());
@@ -248,6 +248,98 @@ export function outfitStudioApi(options = {}) {
         };
         await atomicJson(profileFile, profile);
         return json(res, 200, profile);
+      }
+      const reviewMatch = url.pathname.match(/^\/api\/review\/week(\/collage\.png)?$/);
+      if (reviewMatch && req.method === "GET") {
+        const offset = Math.max(0, Math.min(52, Math.round(Number(url.searchParams.get("offset")) || 0)));
+        const now = new Date();
+        const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7) - (offset * 7));
+        const weekDates = Array.from({ length: 7 }, (_, index) => {
+          const date = new Date(monday);
+          date.setUTCDate(monday.getUTCDate() + index);
+          return date.toISOString().slice(0, 10);
+        });
+        const records = await loadOutfits();
+        const library = await loadLibrary();
+        const byId = new Map(library.map((item) => [item.id, item]));
+        const days = weekDates.map((date) => ({
+          date,
+          weekday: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][(new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7],
+          looks: records
+            .filter((record) => (record.wornAt || []).some((worn) => worn.slice(0, 10) === date))
+            .map((record) => ({ id: record.id, name: record.name, mood: record.mood, image: record.image })),
+        }));
+        const pieceCounts = new Map();
+        const moods = new Map();
+        for (const day of days) {
+          for (const look of day.looks) {
+            const record = records.find((entry) => entry.id === look.id);
+            if (look.mood) moods.set(look.mood, (moods.get(look.mood) || 0) + 1);
+            for (const garmentId of record?.garmentIds || []) {
+              pieceCounts.set(garmentId, (pieceCounts.get(garmentId) || 0) + 1);
+            }
+          }
+        }
+        const topPieceEntry = [...pieceCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+        const stats = {
+          daysDressed: days.filter((day) => day.looks.length).length,
+          totalWears: days.reduce((total, day) => total + day.looks.length, 0),
+          topPiece: topPieceEntry ? { name: byId.get(topPieceEntry[0])?.name || "a piece", count: topPieceEntry[1] } : null,
+          moods: [...moods.entries()].sort((a, b) => b[1] - a[1]).map(([mood]) => mood).slice(0, 3),
+        };
+        if (!reviewMatch[1]) {
+          return json(res, 200, { start: weekDates[0], end: weekDates[6], offset, days, stats });
+        }
+
+        // Shareable weekly collage
+        const TILE = 244, GAP = 12, TOP1 = 226, TOP2 = 546, LABEL = 26;
+        const positions = [
+          ...Array.from({ length: 4 }, (_, index) => ({ left: 34 + index * (TILE + GAP), top: TOP1 })),
+          ...Array.from({ length: 3 }, (_, index) => ({ left: 34 + Math.round((TILE + GAP) / 2) + index * (TILE + GAP), top: TOP2 })),
+        ];
+        const composites = [];
+        const escape = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        let svgParts = [];
+        for (const [index, day] of days.entries()) {
+          const { left, top } = positions[index];
+          const look = day.looks[0];
+          let placed = false;
+          if (look) {
+            try {
+              const bytes = await sharp(path.join(outfitImagesDir, `${look.id}.png`)).resize(TILE, TILE, { fit: "cover" }).png().toBuffer();
+              composites.push({ input: bytes, left, top });
+              placed = true;
+            } catch {}
+          }
+          if (!placed) {
+            svgParts.push(`<rect x="${left}" y="${top}" width="${TILE}" height="${TILE}" fill="#fdfcf9" stroke="#e0d9ca"/>`);
+            svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE / 2 + 8}" text-anchor="middle" font-family="Georgia,serif" font-size="26" fill="#c9c1b0">&#8212;</text>`);
+          }
+          svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE + LABEL}" text-anchor="middle" font-size="13" letter-spacing="3" fill="#71695c">${day.weekday.slice(0, 3).toUpperCase()}</text>`);
+        }
+        const pretty = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
+        const range = `${pretty(weekDates[0])} — ${pretty(weekDates[6])}, ${weekDates[6].slice(0, 4)}`;
+        const summary = stats.totalWears
+          ? `${stats.daysDressed} of 7 days dressed${stats.topPiece ? ` · most worn: ${escape(stats.topPiece.name)}` : ""}${stats.moods.length ? ` · felt ${escape(stats.moods.join(", "))}` : ""}`
+          : "No looks logged this week";
+        const chrome = `<svg width="1080" height="1350">
+          <text x="540" y="84" text-anchor="middle" font-size="12" letter-spacing="6" fill="#9d7b4f">THE WEEK IN LOOKS</text>
+          <text x="540" y="150" text-anchor="middle" font-family="Georgia,serif" font-size="52" letter-spacing="3" fill="#16130e">${range}</text>
+          <rect x="512" y="176" width="56" height="1" fill="#9d7b4f"/>
+          ${svgParts.join("\n")}
+          <text x="540" y="920" text-anchor="middle" font-family="Georgia,serif" font-size="24" font-style="italic" fill="#71695c">${summary}</text>
+          <rect x="512" y="1256" width="56" height="1" fill="#9d7b4f"/>
+          <text x="540" y="1298" text-anchor="middle" font-size="14" letter-spacing="6" fill="#16130e">FASHION INTEL</text>
+        </svg>`;
+        const collage = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: { r: 248, g: 245, b: 239 } } })
+          .composite([...composites, { input: Buffer.from(chrome), left: 0, top: 0 }])
+          .png()
+          .toBuffer();
+        res.setHeader("Content-Type", "image/png");
+        res.setHeader("Content-Disposition", `inline; filename="fashion-intel-week-${weekDates[0]}.png"`);
+        res.setHeader("Cache-Control", "no-store");
+        return res.end(collage);
       }
       if (url.pathname === "/api/capsule" && req.method === "POST") {
         const input = await body(req);

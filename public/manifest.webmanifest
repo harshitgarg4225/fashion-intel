@@ -27,6 +27,12 @@
       "short_name": "Insights",
       "description": "Wardrobe analytics",
       "url": "/?view=insights"
+    },
+    {
+      "name": "Journal",
+      "short_name": "Journal",
+      "description": "What you wore this week",
+      "url": "/?view=journal"
     }
   ]
 }

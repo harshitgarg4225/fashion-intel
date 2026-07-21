@@ -263,9 +263,18 @@ export function OutfitStudio({ items, initialMood = null }) {
   const hasActive = outfits.some((outfit) => ACTIVE_STATUSES.has(outfit.status));
   const chosenMood = customMood.trim() || mood;
 
+  const prevStatusesRef = useRef(new Map());
+
   const refresh = useCallback(async () => {
     try {
       const [loadedOutfits, loadedConfig, loadedUsage] = await Promise.all([api(API), api(`${API}/config`), api("/api/usage").catch(() => null)]);
+      const previous = prevStatusesRef.current;
+      for (const outfit of loadedOutfits) {
+        if (outfit.status === "ready" && ACTIVE_STATUSES.has(previous.get(outfit.id)) && document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+          try { new Notification("Your look is ready", { body: outfit.name, tag: outfit.id }); } catch {}
+        }
+      }
+      prevStatusesRef.current = new Map(loadedOutfits.map((outfit) => [outfit.id, outfit.status]));
       setOutfits(loadedOutfits);
       setConfig(loadedConfig);
       setUsage(loadedUsage);
@@ -311,6 +320,9 @@ export function OutfitStudio({ items, initialMood = null }) {
   const createLook = async ({ lookMood = chosenMood, lookDirection = null, count = 1 } = {}) => {
     setCreating(true);
     setError("");
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
     try {
       const direction = lookDirection ?? [context.trim(), weather ? `today's weather is ${weather}` : ""].filter(Boolean).join("; ");
       for (let index = 0; index < count; index += 1) {

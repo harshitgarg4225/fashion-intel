@@ -13,7 +13,10 @@ Legend: ✅ shipped · 🔜 next up · 🧭 explored / needs design
 - ✅ Local weather awareness (one tap, Open-Meteo, no API key, location never stored)
 - ✅ Rendered lookbook photo of *you* wearing the outfit, with the stylist's reasoning
 - ✅ Favorites (keep the looks that worked; they sort first)
-- ✅ "Wear it" button on every look → builds a wear history that powers Insights
+- ✅ "Wear it" button on every look → builds a wear history that powers Insights and the Journal
+- ✅ Journal: week-by-week view of what you actually wore, day by day, with week navigation and today highlighted
+- ✅ Weekly collage: a shareable editorial card of your week — the looks you wore Monday through Sunday, with stats (days dressed, most-worn piece, the feelings of the week)
+- ✅ Render-ready notifications: a browser notification fires when a look finishes generating while the tab is in the background
 - ✅ PWA shortcuts + deep links (`/?view=outfits`, `/?feel=confident`) for a one-tap "dress me" flow from the home screen
 - ✅ Feedback loop: 👍/👎 per look with reason chips ("too formal", "not my colors") fed back into every future curation
 - ✅ "Another take" + "Swap top / Swap bottom" partial remixes that keep the rest of the look
@@ -72,7 +75,8 @@ Legend: ✅ shipped · 🔜 next up · 🧭 explored / needs design
 
 ## 6. Tech & platform
 
-- ✅ Railway/production deployment: `railway.json`, volume-backed `/data`, PORT/host handling, and a provisioning checklist in DEPLOY.md
+- ✅ Railway/production deployment: `railway.json`, volume-backed `/data`, PORT/host handling, `/api/health` healthcheck, and a provisioning checklist in DEPLOY.md
+- ✅ React error boundary: a failed screen shows a branded recovery card instead of a blank page
 - ✅ Local-first: photos, cutouts, renders, and the database never leave your machine except the specific API calls you configured
 - ✅ Provider-agnostic structured vision layer (OpenAI Responses / Anthropic Messages behind one interface)
 - ✅ Async generation jobs with resumable state, retry, and interruption recovery on restart

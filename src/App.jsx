@@ -4,6 +4,7 @@ import { WardrobeImportFlow } from "./import-flow.jsx";
 import { OptimizedImage } from "./OptimizedImage.jsx";
 import { OutfitStudio } from "./outfit-studio.jsx";
 import { Insights } from "./insights.jsx";
+import { Journal } from "./journal.jsx";
 
 function PassphraseGate() {
   const [passphrase, setPassphrase] = useState("");
@@ -51,7 +52,7 @@ function PassphraseGate() {
 
 function initialViewState() {
   const params = new URLSearchParams(window.location.search);
-  const view = ["outfits", "insights"].includes(params.get("view")) ? params.get("view") : params.get("feel") ? "outfits" : "closet";
+  const view = ["outfits", "insights", "journal"].includes(params.get("view")) ? params.get("view") : params.get("feel") ? "outfits" : "closet";
   return { view, feel: params.get("feel") || null };
 }
 
@@ -806,6 +807,7 @@ export function App() {
             <button type="button" className={view === "closet" ? "active" : ""} onClick={() => setView("closet")} aria-pressed={view === "closet"}>Closet</button>
             <button type="button" className={view === "outfits" ? "active" : ""} onClick={() => setView("outfits")} aria-pressed={view === "outfits"}>Outfit Studio</button>
             <button type="button" className={view === "insights" ? "active" : ""} onClick={() => setView("insights")} aria-pressed={view === "insights"}>Insights</button>
+            <button type="button" className={view === "journal" ? "active" : ""} onClick={() => setView("journal")} aria-pressed={view === "journal"}>Journal</button>
           </nav>
         </header>
         <header className="gallery-header">
@@ -856,6 +858,8 @@ export function App() {
           <OutfitStudio items={items} initialMood={feel} />
         ) : view === "insights" ? (
           <Insights items={items} />
+        ) : view === "journal" ? (
+          <Journal />
         ) : (
           <>
             {error && <p className="status error">{error}</p>}
