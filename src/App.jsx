@@ -33,8 +33,8 @@ function PassphraseGate() {
   return (
     <div className="auth-gate">
       <form onSubmit={submit}>
-        <h1>Fashion Intel</h1>
-        <p>This wardrobe is passphrase-protected.</p>
+        <h1>Mira</h1>
+        <p>This closet is passphrase-protected.</p>
         <input
           type="password"
           value={passphrase}
@@ -801,8 +801,8 @@ export function App() {
     <div className={`app-shell${selectedItem ? " has-selection" : ""}`}>
       <main className="gallery-pane">
         <header className="masthead">
-          <p className="masthead-eyebrow">Your closet, styled by feeling</p>
-          <h1 className="wordmark">Fashion Intel</h1>
+          <p className="masthead-eyebrow">Dress how you feel</p>
+          <h1 className="wordmark">Mira</h1>
           <nav className="view-switch" aria-label="Choose view">
             <button type="button" className={view === "closet" ? "active" : ""} onClick={() => setView("closet")} aria-pressed={view === "closet"}>Closet</button>
             <button type="button" className={view === "outfits" ? "active" : ""} onClick={() => setView("outfits")} aria-pressed={view === "outfits"}>Outfit Studio</button>
@@ -868,7 +868,18 @@ export function App() {
                 {Array.from({ length: 10 }, (_, index) => <div className="skeleton-tile" key={index} />)}
               </section>
             )}
-            {!error && !loading && !items.length && <p className="status empty">Drop, paste, or add a photo to import your first piece.</p>}
+            {!error && !loading && !items.length && (
+              <div className="welcome-card">
+                <p className="masthead-eyebrow">Welcome</p>
+                <h2>Your closet, three steps away</h2>
+                <ol>
+                  <li><strong>Keys</strong> — open the tray (bottom-left) and paste your AI keys, or set them in the environment.</li>
+                  <li><strong>Your photo</strong> — capture a reference photo with your camera; every look is rendered on you.</li>
+                  <li><strong>First piece</strong> — drop in any photo of your clothes, or import from Google Photos or a folder.</li>
+                </ol>
+                <p className="welcome-hint">Everything stays on this machine. The stylist meets you in the Outfit Studio once one top and one bottom are in.</p>
+              </div>
+            )}
             {!error && !loading && !!items.length && !visibleItems.length && <p className="status empty">No pieces match that search.</p>}
 
             {!!items.length && (
@@ -897,7 +908,7 @@ export function App() {
           onDismissDuplicate={() => dismissDuplicate(selectedItem.id)}
         />
       )}
-      <WardrobeImportFlow onGarmentApproved={addImportedItem} onModeledApproved={attachImportedModeledImage} />
+      <WardrobeImportFlow onGarmentApproved={addImportedItem} onModeledApproved={attachImportedModeledImage} emphasize={!loading && !items.length} />
     </div>
   );
 }

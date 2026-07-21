@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { clientIp, isTrustedProxy } from "./request-utils.mjs";
 
 // Cookie-session gate for every /api route. Active only when
 // WARDROBE_PASSPHRASE is set in the environment (deliberately env-only:
@@ -47,6 +48,37 @@ function cookieValue(req) {
 export function authApi(options = {}) {
   const setting = (name, fallback = "") => options.env?.[name] || process.env[name] || fallback;
   const passphrase = () => setting("WARDROBE_PASSPHRASE").trim();
+  const trustProxy = isTrustedProxy(options.env);
+  const failedLogins = new Map();
+  const DECAY_MS = 15 * 60 * 1000;
+  const LOCK_MS = 10 * 60 * 1000;
+
+  function loginLock(req) {
+    const ip = clientIp(req, trustProxy);
+    const entry = failedLogins.get(ip);
+    if (!entry) return { ip, locked: false };
+    const now = Date.now();
+    if (entry.lockedUntil && now >= entry.lockedUntil) {
+      failedLogins.delete(ip);
+      return { ip, locked: false };
+    }
+    if (now - entry.lastFailAt > DECAY_MS) {
+      failedLogins.delete(ip);
+      return { ip, locked: false };
+    }
+    return { ip, locked: entry.count >= 8 && now < entry.lockedUntil };
+  }
+
+  function recordFailure(ip) {
+    const now = Date.now();
+    let entry = failedLogins.get(ip);
+    if (!entry || now - entry.lastFailAt > DECAY_MS) entry = { count: 0, lockedUntil: 0, lastFailAt: now };
+    entry.count += 1;
+    entry.lastFailAt = now;
+    if (entry.count >= 8) entry.lockedUntil = now + LOCK_MS;
+    failedLogins.set(ip, entry);
+    if (failedLogins.size > 5000) failedLogins.clear();
+  }
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
@@ -60,12 +92,16 @@ export function authApi(options = {}) {
     }
     if (url.pathname === "/api/auth/login" && req.method === "POST") {
       if (!required) return json(res, 200, { authed: true });
+      const { ip, locked } = loginLock(req);
+      if (locked) return json(res, 429, { error: "Too many attempts. Try again in ten minutes." });
       const input = await body(req);
       const attempt = typeof input.passphrase === "string" ? input.passphrase : "";
       if (!attempt || !safeEqual(attempt, passphrase())) {
+        recordFailure(ip);
         await new Promise((resolve) => setTimeout(resolve, 400));
         return json(res, 401, { error: "That passphrase is not right." });
       }
+      failedLogins.delete(ip);
       const secure = (req.headers["x-forwarded-proto"] || "").includes("https") ? "; Secure" : "";
       res.setHeader("Set-Cookie", `${COOKIE}=${sessionTokenFor(passphrase())}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${30 * 24 * 3600}${secure}`);
       return json(res, 200, { authed: true });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { CaretLeft, CaretRight, DownloadSimple } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, DownloadSimple, ShareNetwork } from "@phosphor-icons/react";
 import { OptimizedImage } from "./OptimizedImage.jsx";
+import { deliverShare } from "./share-utils.js";
 import "./journal.css";
 
 function formatRange(start, end) {
@@ -14,6 +15,9 @@ export function Journal() {
   const [offset, setOffset] = useState(0);
   const [week, setWeek] = useState(null);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const [manualShareUrl, setManualShareUrl] = useState(null);
   const today = new Date().toISOString().slice(0, 10);
 
   const load = useCallback(async (weekOffset) => {
@@ -46,6 +50,7 @@ export function Journal() {
           <h2>{formatRange(week.start, week.end)}</h2>
           {hasWears ? (
             <p className="journal-summary">
+              {week.stats.streak > 1 && <span className="streak-chip">{week.stats.streak}-day streak</span>}
               Dressed {week.stats.daysDressed} of 7 days
               {week.stats.topPiece && <> · most worn: <em>{week.stats.topPiece.name}</em></>}
               {!!week.stats.moods.length && <> · felt <em>{week.stats.moods.join(", ")}</em></>}
@@ -83,10 +88,37 @@ export function Journal() {
 
       {hasWears && (
         <div className="journal-actions">
-          <a className="journal-collage" href={`/api/review/week/collage.png?offset=${offset}`} target="_blank" rel="noreferrer">
-            <DownloadSimple size={15} aria-hidden="true" /> Weekly collage
+          <button
+            type="button"
+            className="journal-collage"
+            onClick={async () => {
+              setShareError("");
+              setManualShareUrl(null);
+              try {
+                const response = await fetch("/api/review/week/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offset }) });
+                const share = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(share.error || "Could not create the share link.");
+                const shareUrl = `${window.location.origin}${share.path}`;
+                const delivery = await deliverShare({ title: "My week in looks — Mira", url: shareUrl });
+                if (delivery.status === "shared" || delivery.status === "copied") {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2500);
+                } else if (delivery.status === "manual") {
+                  setManualShareUrl(shareUrl);
+                }
+              } catch (requestError) {
+                setShareError(requestError.message);
+              }
+            }}
+          >
+            <ShareNetwork size={15} aria-hidden="true" /> {copied ? "Link copied" : "Share my week"}
+          </button>
+          <a className="journal-download" href={`/api/review/week/collage.png?offset=${offset}`} target="_blank" rel="noreferrer">
+            <DownloadSimple size={14} aria-hidden="true" /> Download collage
           </a>
-          <p className="journal-note">A shareable card of your week — the looks you actually wore, day by day.</p>
+          {manualShareUrl && <p className="journal-note">Your public link: <a href={manualShareUrl} target="_blank" rel="noreferrer">{manualShareUrl}</a></p>}
+          {shareError && <p className="journal-note journal-share-error" role="alert">{shareError}</p>}
+          <p className="journal-note">Anyone with the link sees a beautiful page of your week — and can meet Mira from it.</p>
         </div>
       )}
     </section>

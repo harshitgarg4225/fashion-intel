@@ -1,7 +1,7 @@
 {
-  "name": "Fashion Intel",
-  "short_name": "Fashion Intel",
-  "description": "Your wardrobe, digitized and styled with AI.",
+  "name": "Mira",
+  "short_name": "Mira",
+  "description": "Dress how you feel \u2014 from your own closet, on your own body.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

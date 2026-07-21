@@ -93,3 +93,15 @@ test("buildCurationPrompt reflects mood, feedback, rules, and visuals", () => {
   assert.match(prompt, /inspiration photo/);
   assert.match(prompt, /Navy Tee \+ Chinos/);
 });
+
+test("computeStreak counts consecutive worn days and stays alive before today's wear", async () => {
+  const { computeStreak } = await import("../scripts/wear-stats.mjs");
+  const outfits = [
+    { wornAt: ["2026-07-18T08:00:00Z", "2026-07-19T08:00:00Z", "2026-07-20T08:00:00Z"] },
+    { wornAt: ["2026-07-16T09:00:00Z"] },
+  ];
+  assert.equal(computeStreak(outfits, "2026-07-20"), 3);
+  assert.equal(computeStreak(outfits, "2026-07-21"), 3, "streak survives the morning before dressing");
+  assert.equal(computeStreak(outfits, "2026-07-23"), 0, "a missed day breaks it");
+  assert.equal(computeStreak([], "2026-07-20"), 0);
+});

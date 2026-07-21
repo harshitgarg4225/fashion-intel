@@ -1,22 +1,23 @@
 <div align="center">
 
-# Fashion Intel
+# Mira
 
-Your wardrobe, digitized and styled with AI.
+Dress how you feel.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-191919?style=flat-square)](LICENSE)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-191919?style=flat-square)](package.json)
 
 </div>
 
-Fashion Intel turns photos of your clothes into an organized digital closet, then dresses you from it — starting from how you want to *feel*.
+**Mira** turns photos of your clothes into an organized digital closet, then dresses you from it — starting from how you want to *feel*. (Repository and environment variables keep their original names for compatibility.)
 
 - **"How do you want to feel today?"** — pick a feeling (confident, cozy, bold, effortless…) or describe it in your own words, add an occasion preset and one-tap local weather — or attach an inspiration photo — and the stylist curates a complete look from your real closet, explains why it works, and renders a lookbook photo of *you* wearing it. Ask for **3 options**, get **another take**, tap **Wear it** when you walk out the door, and 👍/👎 with a reason — the stylist learns from every verdict, your **style profile** (notes + hard rules), and the garment photos themselves.
 - **Import from anywhere** — drop, paste, or upload photos; pick photos straight from **Google Photos** (official Picker API); or point it at a **local folder** (export an Apple Photos album to a folder and import it in one go). AI vision detects every garment, extracts a clean product cutout, and models each piece on you.
 - **Only *your* clothes** — with your reference photo in place, the face filter keeps garments worn by you (or shown unworn) and skips friends, mannequins, and store photos automatically.
 - **Closet** — browse by category, search by name/tag/category, see per-category counts and your wardrobe's dominant color palette. Mark pieces as in-the-laundry (the stylist skips them), add prices, and get flagged when an import looks like a duplicate you already own.
 - **Insights** — most-worn and never-worn pieces, cost-per-wear, color balance, category bars, and gap advice ("one more bottom unlocks 14 new pairings"), all computed from your own wear history.
-- **Journal** — your week in looks: what you actually wore, day by day, with a one-tap **weekly collage** — a shareable editorial card of the week (looks, days dressed, most-worn piece, the feelings you chose).
+- **Journal** — your week in looks: what you actually wore, day by day, with wear **streaks** and a one-tap **weekly collage**.
+- **Share loops** — every look and every week can become a **public share link**: a beautiful page with the render, the story, rich link previews (OG images) in WhatsApp/iMessage/X, and a "Get dressed by Mira" call-to-action. Native share sheet on mobile, copy-link on desktop, revocable any time, rate-limited, and never exposing anything you didn't explicitly share.
 - **Trust built in** — a local audit log of every AI call, a daily cost meter with an optional hard budget (`WARDROBE_DAILY_BUDGET`), and `npm run backup` / `backup:wipe` to export or erase everything. First run captures your reference photo in-app via webcam or upload.
 
 Everything stays local: originals, cutouts, renders, outfits, and the JSON database live in `data/` on your machine. See [ROADMAP.md](ROADMAP.md) for the full product plan.
@@ -49,7 +50,7 @@ Optionally add `ANTHROPIC_API_KEY` to run garment detection and outfit curation 
 2. Put the client ID and secret in `.env` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) and restart.
 3. In the import tray, hit **Connect Google Photos**, approve access, then pick photos in Google's own picker — the import starts automatically when you're done picking.
 
-The app uses only the narrow Picker scope: it can never browse your library, only receive the photos you explicitly pick. The OAuth token is stored locally in `data/` with owner-only permissions.
+Mira uses only the narrow Picker scope: it can never browse your library, only receive the photos you explicitly pick. The OAuth token is stored locally in `data/` with owner-only permissions.
 
 ### Apple Photos / camera roll
 
@@ -92,6 +93,7 @@ Every generation step is reviewable: approve, reject, or regenerate with a corre
 | `WARDROBE_PASSPHRASE` | off | Gates every /api route behind a login; required for public deploys |
 | `WARDROBE_IMAGE_PROVIDER` | `openai` | `gemini` renders all images with Gemini (`GEMINI_API_KEY`) |
 | `WARDROBE_HEMISPHERE` | `north` | Season logic for the stylist and capsule planner |
+| `WARDROBE_ABOUT_URL` | this repo | Where the "Get dressed by Mira" button on share pages points |
 
 API keys can also be entered in the app (import tray → setup) and are stored in `data/settings.json`; environment variables always win.
 
@@ -108,7 +110,7 @@ The repo bundles two agent skills under `.agents/skills/` for bulk work from a c
 
 ## Credits
 
-Built on [tandpfun/wardrobe](https://github.com/tandpfun/wardrobe) by Thijs Simonian (MIT), the project behind the viral "AI organized my entire wardrobe" post. Fashion Intel extends it with an in-app Outfit Studio (outfit curation, rendering, and a lookbook gallery — no external agent required), an optional Claude-powered stylist, closet search, category counts, and a wardrobe color palette.
+Built on [tandpfun/wardrobe](https://github.com/tandpfun/wardrobe) by Thijs Simonian (MIT), the project behind the viral "AI organized my entire wardrobe" post. Mira extends it with an in-app Outfit Studio (outfit curation, rendering, and a lookbook gallery — no external agent required), an optional Claude-powered stylist, closet search, category counts, and a wardrobe color palette.
 
 ## License
 

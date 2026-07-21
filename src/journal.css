@@ -162,3 +162,30 @@
 @media (max-width: 560px) {
   .journal-week { grid-template-columns: repeat(2, 1fr); }
 }
+
+.streak-chip {
+  display: inline-block;
+  margin-right: 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 2px 10px;
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.journal-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.journal-download:hover { color: var(--ink); }
+
+.journal-share-error { color: var(--danger); }

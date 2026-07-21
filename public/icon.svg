@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#f4f0e8"/>
-  <path d="M178 142l-74 58 42 65 38-21v132h144V244l38 21 42-65-74-58-47 30h-62l-47-30Z" fill="none" stroke="#191919" stroke-linejoin="round" stroke-width="20"/>
-  <path d="M225 172c5 26 57 26 62 0" fill="none" stroke="#191919" stroke-linecap="round" stroke-width="20"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" fill="#f8f5ef"/>
+  <rect x="8" y="8" width="112" height="112" fill="none" stroke="#e0d9ca" stroke-width="2"/>
+  <text x="64" y="82" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="64" fill="#16130e">M</text>
+  <rect x="48" y="96" width="32" height="2" fill="#9d7b4f"/>
 </svg>

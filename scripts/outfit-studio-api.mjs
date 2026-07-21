@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -7,6 +7,8 @@ import { curateOutfit, buildOutfitImagePrompt, planCapsule } from "./stylist.mjs
 import { resolveStylistProvider } from "./ai-providers.mjs";
 import { checkImageBudget, initTelemetry, usageToday } from "./telemetry.mjs";
 import { makeSetting } from "./settings-store.mjs";
+import { computeStreak } from "./wear-stats.mjs";
+import { clientIp, isTrustedProxy } from "./request-utils.mjs";
 
 const API_ROOT = "/api/outfits";
 const IMAGE_ROOT = "/api/outfits/images";
@@ -49,8 +51,30 @@ export function outfitStudioApi(options = {}) {
   let profileFile;
   let libraryFile;
   let importedDir;
+  let sharesFile;
   const running = new Map();
+  const shareHits = new Map();
   const setting = makeSetting(options);
+
+  const trustProxy = isTrustedProxy(options.env);
+
+  function shareRateLimited(req) {
+    const ip = clientIp(req, trustProxy);
+    const now = Date.now();
+    const entry = shareHits.get(ip);
+    if (!entry || now > entry.resetAt) {
+      shareHits.set(ip, { count: 1, resetAt: now + 60_000 });
+      if (shareHits.size > 5000) shareHits.clear();
+      return false;
+    }
+    entry.count += 1;
+    return entry.count > 120;
+  }
+
+  async function loadShares() {
+    try { return JSON.parse(await readFile(sharesFile, "utf8")); }
+    catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  }
 
   function currentSeason() {
     const month = new Date().getMonth();
@@ -91,6 +115,125 @@ export function outfitStudioApi(options = {}) {
   function garmentFile(item) {
     const name = path.basename(new URL(item.image, "http://localhost").pathname);
     return path.join(importedDir, name);
+  }
+
+  const escapeXml = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+  function mondayFor(offset) {
+    const now = new Date();
+    const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7) - (offset * 7));
+    return monday.toISOString().slice(0, 10);
+  }
+
+  async function buildWeek(mondayStr) {
+    const monday = new Date(`${mondayStr}T00:00:00Z`);
+    const weekDates = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday);
+      date.setUTCDate(monday.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+    const records = await loadOutfits();
+    const library = await loadLibrary();
+    const byId = new Map(library.map((item) => [item.id, item]));
+    const days = weekDates.map((date) => ({
+      date,
+      weekday: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][(new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7],
+      looks: records
+        .filter((record) => (record.wornAt || []).some((worn) => worn.slice(0, 10) === date))
+        .map((record) => ({ id: record.id, name: record.name, mood: record.mood, image: record.image })),
+    }));
+    const pieceCounts = new Map();
+    const moods = new Map();
+    for (const day of days) {
+      for (const look of day.looks) {
+        const record = records.find((entry) => entry.id === look.id);
+        if (look.mood) moods.set(look.mood, (moods.get(look.mood) || 0) + 1);
+        for (const garmentId of record?.garmentIds || []) {
+          pieceCounts.set(garmentId, (pieceCounts.get(garmentId) || 0) + 1);
+        }
+      }
+    }
+    const topPieceEntry = [...pieceCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const stats = {
+      daysDressed: days.filter((day) => day.looks.length).length,
+      totalWears: days.reduce((total, day) => total + day.looks.length, 0),
+      topPiece: topPieceEntry ? { name: byId.get(topPieceEntry[0])?.name || "a piece", count: topPieceEntry[1] } : null,
+      moods: [...moods.entries()].sort((a, b) => b[1] - a[1]).map(([mood]) => mood).slice(0, 3),
+      streak: weekDates.includes(new Date().toISOString().slice(0, 10)) ? computeStreak(records, new Date().toISOString().slice(0, 10)) : 0,
+    };
+    return { start: weekDates[0], end: weekDates[6], weekDates, days, stats };
+  }
+
+  function weekSummaryLine(stats) {
+    if (!stats.totalWears) return "No looks logged this week";
+    return `${stats.daysDressed} of 7 days dressed${stats.streak > 1 ? ` · ${stats.streak}-day streak` : ""}${stats.topPiece ? ` · most worn: ${escapeXml(stats.topPiece.name)}` : ""}${stats.moods.length ? ` · felt ${escapeXml(stats.moods.join(", "))}` : ""}`;
+  }
+
+  async function buildWeekCollage(week) {
+    const TILE = 244, GAP = 12, TOP1 = 226, TOP2 = 546, LABEL = 26;
+    const positions = [
+      ...Array.from({ length: 4 }, (_, index) => ({ left: 34 + index * (TILE + GAP), top: TOP1 })),
+      ...Array.from({ length: 3 }, (_, index) => ({ left: 34 + Math.round((TILE + GAP) / 2) + index * (TILE + GAP), top: TOP2 })),
+    ];
+    const composites = [];
+    const svgParts = [];
+    for (const [index, day] of week.days.entries()) {
+      const { left, top } = positions[index];
+      const look = day.looks[0];
+      let placed = false;
+      if (look) {
+        try {
+          const bytes = await sharp(path.join(outfitImagesDir, `${look.id}.png`)).resize(TILE, TILE, { fit: "cover" }).png().toBuffer();
+          composites.push({ input: bytes, left, top });
+          placed = true;
+        } catch {}
+      }
+      if (!placed) {
+        svgParts.push(`<rect x="${left}" y="${top}" width="${TILE}" height="${TILE}" fill="#fdfcf9" stroke="#e0d9ca"/>`);
+        svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE / 2 + 8}" text-anchor="middle" font-family="Georgia,serif" font-size="26" fill="#c9c1b0">&#8212;</text>`);
+      }
+      svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE + LABEL}" text-anchor="middle" font-size="13" letter-spacing="3" fill="#71695c">${day.weekday.slice(0, 3).toUpperCase()}</text>`);
+    }
+    const pretty = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
+    const range = `${pretty(week.start)} — ${pretty(week.end)}, ${week.end.slice(0, 4)}`;
+    const chrome = `<svg width="1080" height="1350">
+      <text x="540" y="84" text-anchor="middle" font-size="12" letter-spacing="6" fill="#9d7b4f">THE WEEK IN LOOKS</text>
+      <text x="540" y="150" text-anchor="middle" font-family="Georgia,serif" font-size="52" letter-spacing="3" fill="#16130e">${range}</text>
+      <rect x="512" y="176" width="56" height="1" fill="#9d7b4f"/>
+      ${svgParts.join("\n")}
+      <text x="540" y="920" text-anchor="middle" font-family="Georgia,serif" font-size="24" font-style="italic" fill="#71695c">${weekSummaryLine(week.stats)}</text>
+      <rect x="512" y="1256" width="56" height="1" fill="#9d7b4f"/>
+      <text x="540" y="1298" text-anchor="middle" font-size="14" letter-spacing="6" fill="#16130e">M I R A</text>
+    </svg>`;
+    return sharp({ create: { width: 1080, height: 1350, channels: 3, background: { r: 248, g: 245, b: 239 } } })
+      .composite([...composites, { input: Buffer.from(chrome), left: 0, top: 0 }])
+      .png()
+      .toBuffer();
+  }
+
+  async function buildLookCard(record) {
+    const library = await loadLibrary();
+    const byId = new Map(library.map((item) => [item.id, item]));
+    const photo = await sharp(path.join(outfitImagesDir, `${record.id}.png`)).resize(1000, 1000, { fit: "cover" }).png().toBuffer();
+    const thumbs = [];
+    for (const garmentId of (record.garmentIds || []).slice(0, 6)) {
+      const item = byId.get(garmentId);
+      if (!item) continue;
+      try {
+        thumbs.push(await sharp(await readFile(garmentFile(item))).resize(120, 120, { fit: "inside" }).png().toBuffer());
+      } catch {}
+    }
+    const label = `<svg width="1080" height="1400"><style>text{font-family:Georgia,serif;fill:#16130e}</style><text x="40" y="1245" font-size="44" font-weight="600">${escapeXml(record.name)}</text><text x="40" y="1292" font-size="24" fill="#71695c" font-style="italic">${escapeXml([record.mood ? `feels ${record.mood}` : "", ...(record.occasion || [])].filter(Boolean).join(" · "))}</text><text x="40" y="1360" font-family="Helvetica,Arial,sans-serif" font-size="18" letter-spacing="6" fill="#9d7b4f">M I R A</text></svg>`;
+    const composites = [
+      { input: photo, left: 40, top: 40 },
+      ...thumbs.map((thumb, index) => ({ input: thumb, left: 40 + (index * 140), top: 1080 })),
+      { input: Buffer.from(label), left: 0, top: 0 },
+    ];
+    return sharp({ create: { width: 1080, height: 1400, channels: 3, background: { r: 248, g: 245, b: 239 } } })
+      .composite(composites)
+      .png()
+      .toBuffer();
   }
 
   async function garmentReference(item, name) {
@@ -235,8 +378,93 @@ export function outfitStudioApi(options = {}) {
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith(`${API_ROOT}`) && !url.pathname.startsWith("/api/review") && url.pathname !== "/api/profile" && url.pathname !== "/api/usage" && url.pathname !== "/api/capsule") return next();
+    if (!url.pathname.startsWith(`${API_ROOT}`) && !url.pathname.startsWith("/api/review") && !url.pathname.startsWith("/api/shares") && !url.pathname.startsWith("/s/") && url.pathname !== "/api/profile" && url.pathname !== "/api/usage" && url.pathname !== "/api/capsule") return next();
     try {
+      const publicMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{10,64})(\/og\.png)?$/);
+      if (publicMatch && req.method === "GET") {
+        if (shareRateLimited(req)) {
+          res.statusCode = 429;
+          res.setHeader("Content-Type", "text/plain");
+          return res.end("Too many requests. Try again in a minute.");
+        }
+        const shares = await loadShares();
+        const share = shares.find((entry) => entry.token === publicMatch[1]);
+        const sendHtml = (status, html) => {
+          res.statusCode = status;
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'");
+          res.setHeader("Cache-Control", "no-store");
+          res.setHeader("X-Robots-Tag", "noindex");
+          return res.end(html);
+        };
+        const aboutUrl = setting("WARDROBE_ABOUT_URL", "https://github.com/harshitgarg4225/fashion-intel");
+        const pageShell = (title, inner) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${inner.meta || ""}<title>${escapeXml(title)}</title><style>
+          body{margin:0;background:#f8f5ef;color:#16130e;font-family:Helvetica,Arial,sans-serif;text-align:center}
+          .wrap{max-width:560px;margin:0 auto;padding:48px 20px 72px}
+          .eyebrow{font-size:11px;letter-spacing:.3em;color:#9d7b4f;text-transform:uppercase;margin:0 0 10px}
+          h1{font-family:Georgia,serif;font-weight:600;font-size:34px;letter-spacing:.02em;margin:0}
+          .rule{width:56px;height:1px;background:#9d7b4f;margin:18px auto}
+          img.hero{width:100%;border:1px solid #e0d9ca;background:#fdfcf9}
+          .sub{font-family:Georgia,serif;font-style:italic;font-size:17px;color:#71695c;margin:14px 0 26px}
+          .cta{display:inline-block;background:#16130e;color:#f8f5ef;text-decoration:none;padding:14px 28px;font-size:12px;letter-spacing:.2em;text-transform:uppercase}
+          .cta:hover{background:#9d7b4f}
+          .foot{margin-top:34px;font-size:12px;letter-spacing:.24em;color:#71695c}
+        </style></head><body><div class="wrap">${inner.body}</div></body></html>`;
+        if (!share) {
+          return sendHtml(404, pageShell("Mira", { body: `<p class="eyebrow">Mira</p><h1>This look has moved on</h1><div class="rule"></div><p class="sub">The share link is no longer available.</p><a class="cta" href="${escapeXml(aboutUrl)}">Meet Mira</a>` }));
+        }
+        if (publicMatch[2]) {
+          let image = null;
+          if (share.type === "look") {
+            const records = await loadOutfits();
+            const record = records.find((entry) => entry.id === share.outfitId);
+            if (record?.status === "ready") image = await buildLookCard(record);
+          } else {
+            image = await buildWeekCollage(await buildWeek(share.weekStart));
+          }
+          if (!image) return json(res, 404, { error: "Not found" });
+          res.setHeader("Content-Type", "image/png");
+          res.setHeader("Cache-Control", "public, max-age=3600");
+          return res.end(image);
+        }
+        const proto = (req.headers["x-forwarded-proto"] || "").includes("https") ? "https" : "http";
+        const base = `${proto}://${req.headers.host || "localhost"}`;
+        const ogUrl = `${base}/s/${share.token}/og.png`;
+        const meta = (title, description) => `
+          <meta property="og:title" content="${escapeXml(title)}">
+          <meta property="og:description" content="${escapeXml(description)}">
+          <meta property="og:image" content="${escapeXml(ogUrl)}">
+          <meta property="og:type" content="website">
+          <meta name="twitter:card" content="summary_large_image">
+          <meta name="twitter:image" content="${escapeXml(ogUrl)}">`;
+        if (share.type === "look") {
+          const records = await loadOutfits();
+          const record = records.find((entry) => entry.id === share.outfitId);
+          if (!record || record.status !== "ready") {
+            return sendHtml(404, pageShell("Mira", { body: `<p class="eyebrow">Mira</p><h1>This look has moved on</h1><div class="rule"></div><a class="cta" href="${escapeXml(aboutUrl)}">Meet Mira</a>` }));
+          }
+          const subtitle = [record.mood ? `feels ${record.mood}` : "", ...(record.occasion || [])].filter(Boolean).join(" · ");
+          return sendHtml(200, pageShell(`${record.name} — Mira`, {
+            meta: meta(`${record.name} — styled by Mira`, record.reason || "A look styled from a real closet, rendered by Mira."),
+            body: `<p class="eyebrow">A look styled by Mira</p><h1>${escapeXml(record.name)}</h1>${subtitle ? `<p class="sub">${escapeXml(subtitle)}</p>` : '<div class="rule"></div>'}<img class="hero" src="/s/${share.token}/og.png" alt="${escapeXml(record.name)}">${record.reason ? `<p class="sub">"${escapeXml(record.reason)}"</p>` : ""}<a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · DRESS HOW YOU FEEL</p>`,
+          }));
+        }
+        const week = await buildWeek(share.weekStart);
+        return sendHtml(200, pageShell("A week of looks — Mira", {
+          meta: meta("A week of looks — Mira", weekSummaryLine(week.stats)),
+          body: `<p class="eyebrow">A week dressed by Mira</p><h1>The Week in Looks</h1><div class="rule"></div><img class="hero" src="/s/${share.token}/og.png" alt="Weekly collage of looks"><p class="sub">${weekSummaryLine(week.stats)}</p><a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · DRESS HOW YOU FEEL</p>`,
+        }));
+      }
+      if (url.pathname === "/api/shares" && req.method === "GET") {
+        return json(res, 200, await loadShares());
+      }
+      const shareDeleteMatch = url.pathname.match(/^\/api\/shares\/([A-Za-z0-9_-]{10,64})$/);
+      if (shareDeleteMatch && req.method === "DELETE") {
+        const shares = await loadShares();
+        if (!shares.some((entry) => entry.token === shareDeleteMatch[1])) return json(res, 404, { error: "Share not found" });
+        await atomicJson(sharesFile, shares.filter((entry) => entry.token !== shareDeleteMatch[1]));
+        return json(res, 200, { deleted: true });
+      }
       if (url.pathname === "/api/profile" && req.method === "GET") {
         return json(res, 200, await loadProfile());
       }
@@ -249,95 +477,27 @@ export function outfitStudioApi(options = {}) {
         await atomicJson(profileFile, profile);
         return json(res, 200, profile);
       }
-      const reviewMatch = url.pathname.match(/^\/api\/review\/week(\/collage\.png)?$/);
-      if (reviewMatch && req.method === "GET") {
+      const reviewMatch = url.pathname.match(/^\/api\/review\/week(\/collage\.png|\/share)?$/);
+      if (reviewMatch && ((reviewMatch[1] === "/share" && req.method === "POST") || (reviewMatch[1] !== "/share" && req.method === "GET"))) {
         const offset = Math.max(0, Math.min(52, Math.round(Number(url.searchParams.get("offset")) || 0)));
-        const now = new Date();
-        const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-        monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7) - (offset * 7));
-        const weekDates = Array.from({ length: 7 }, (_, index) => {
-          const date = new Date(monday);
-          date.setUTCDate(monday.getUTCDate() + index);
-          return date.toISOString().slice(0, 10);
-        });
-        const records = await loadOutfits();
-        const library = await loadLibrary();
-        const byId = new Map(library.map((item) => [item.id, item]));
-        const days = weekDates.map((date) => ({
-          date,
-          weekday: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][(new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7],
-          looks: records
-            .filter((record) => (record.wornAt || []).some((worn) => worn.slice(0, 10) === date))
-            .map((record) => ({ id: record.id, name: record.name, mood: record.mood, image: record.image })),
-        }));
-        const pieceCounts = new Map();
-        const moods = new Map();
-        for (const day of days) {
-          for (const look of day.looks) {
-            const record = records.find((entry) => entry.id === look.id);
-            if (look.mood) moods.set(look.mood, (moods.get(look.mood) || 0) + 1);
-            for (const garmentId of record?.garmentIds || []) {
-              pieceCounts.set(garmentId, (pieceCounts.get(garmentId) || 0) + 1);
-            }
+        const requestedOffset = reviewMatch[1] === "/share" ? Math.max(0, Math.min(52, Math.round(Number((await body(req)).offset) || 0))) : offset;
+        const monday = mondayFor(requestedOffset);
+        if (reviewMatch[1] === "/share") {
+          const shares = await loadShares();
+          let share = shares.find((entry) => entry.type === "week" && entry.weekStart === monday);
+          if (!share) {
+            share = { token: randomBytes(18).toString("base64url"), type: "week", weekStart: monday, createdAt: new Date().toISOString() };
+            await atomicJson(sharesFile, [...shares, share]);
           }
+          return json(res, 200, { token: share.token, path: `/s/${share.token}` });
         }
-        const topPieceEntry = [...pieceCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-        const stats = {
-          daysDressed: days.filter((day) => day.looks.length).length,
-          totalWears: days.reduce((total, day) => total + day.looks.length, 0),
-          topPiece: topPieceEntry ? { name: byId.get(topPieceEntry[0])?.name || "a piece", count: topPieceEntry[1] } : null,
-          moods: [...moods.entries()].sort((a, b) => b[1] - a[1]).map(([mood]) => mood).slice(0, 3),
-        };
+        const week = await buildWeek(monday);
         if (!reviewMatch[1]) {
-          return json(res, 200, { start: weekDates[0], end: weekDates[6], offset, days, stats });
+          return json(res, 200, { start: week.start, end: week.end, offset: requestedOffset, days: week.days, stats: week.stats });
         }
-
-        // Shareable weekly collage
-        const TILE = 244, GAP = 12, TOP1 = 226, TOP2 = 546, LABEL = 26;
-        const positions = [
-          ...Array.from({ length: 4 }, (_, index) => ({ left: 34 + index * (TILE + GAP), top: TOP1 })),
-          ...Array.from({ length: 3 }, (_, index) => ({ left: 34 + Math.round((TILE + GAP) / 2) + index * (TILE + GAP), top: TOP2 })),
-        ];
-        const composites = [];
-        const escape = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        let svgParts = [];
-        for (const [index, day] of days.entries()) {
-          const { left, top } = positions[index];
-          const look = day.looks[0];
-          let placed = false;
-          if (look) {
-            try {
-              const bytes = await sharp(path.join(outfitImagesDir, `${look.id}.png`)).resize(TILE, TILE, { fit: "cover" }).png().toBuffer();
-              composites.push({ input: bytes, left, top });
-              placed = true;
-            } catch {}
-          }
-          if (!placed) {
-            svgParts.push(`<rect x="${left}" y="${top}" width="${TILE}" height="${TILE}" fill="#fdfcf9" stroke="#e0d9ca"/>`);
-            svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE / 2 + 8}" text-anchor="middle" font-family="Georgia,serif" font-size="26" fill="#c9c1b0">&#8212;</text>`);
-          }
-          svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE + LABEL}" text-anchor="middle" font-size="13" letter-spacing="3" fill="#71695c">${day.weekday.slice(0, 3).toUpperCase()}</text>`);
-        }
-        const pretty = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
-        const range = `${pretty(weekDates[0])} — ${pretty(weekDates[6])}, ${weekDates[6].slice(0, 4)}`;
-        const summary = stats.totalWears
-          ? `${stats.daysDressed} of 7 days dressed${stats.topPiece ? ` · most worn: ${escape(stats.topPiece.name)}` : ""}${stats.moods.length ? ` · felt ${escape(stats.moods.join(", "))}` : ""}`
-          : "No looks logged this week";
-        const chrome = `<svg width="1080" height="1350">
-          <text x="540" y="84" text-anchor="middle" font-size="12" letter-spacing="6" fill="#9d7b4f">THE WEEK IN LOOKS</text>
-          <text x="540" y="150" text-anchor="middle" font-family="Georgia,serif" font-size="52" letter-spacing="3" fill="#16130e">${range}</text>
-          <rect x="512" y="176" width="56" height="1" fill="#9d7b4f"/>
-          ${svgParts.join("\n")}
-          <text x="540" y="920" text-anchor="middle" font-family="Georgia,serif" font-size="24" font-style="italic" fill="#71695c">${summary}</text>
-          <rect x="512" y="1256" width="56" height="1" fill="#9d7b4f"/>
-          <text x="540" y="1298" text-anchor="middle" font-size="14" letter-spacing="6" fill="#16130e">FASHION INTEL</text>
-        </svg>`;
-        const collage = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: { r: 248, g: 245, b: 239 } } })
-          .composite([...composites, { input: Buffer.from(chrome), left: 0, top: 0 }])
-          .png()
-          .toBuffer();
+        const collage = await buildWeekCollage(week);
         res.setHeader("Content-Type", "image/png");
-        res.setHeader("Content-Disposition", `inline; filename="fashion-intel-week-${weekDates[0]}.png"`);
+        res.setHeader("Content-Disposition", `inline; filename="mira-week-${week.start}.png"`);
         res.setHeader("Cache-Control", "no-store");
         return res.end(collage);
       }
@@ -419,7 +579,7 @@ export function outfitStudioApi(options = {}) {
         void generate(record.id);
         return json(res, 202, record);
       }
-      const match = url.pathname.match(/^\/api\/outfits\/([a-f0-9-]{36})(?:\/(retry|wear|remix|card\.png))?$/i);
+      const match = url.pathname.match(/^\/api\/outfits\/([a-f0-9-]{36})(?:\/(retry|wear|remix|share|card\.png))?$/i);
       if (!match) return json(res, 404, { error: "Not found" });
       const records = await loadOutfits();
       const record = records.find((entry) => entry.id === match[1]);
@@ -434,32 +594,21 @@ export function outfitStudioApi(options = {}) {
       }
       if (match[2] === "card.png" && req.method === "GET") {
         if (record.status !== "ready" || !record.image) return json(res, 409, { error: "This look has no rendered photo yet." });
-        const library = await loadLibrary();
-        const byId = new Map(library.map((item) => [item.id, item]));
-        const photo = await sharp(path.join(outfitImagesDir, `${record.id}.png`)).resize(1000, 1000, { fit: "cover" }).png().toBuffer();
-        const thumbs = [];
-        for (const garmentId of (record.garmentIds || []).slice(0, 6)) {
-          const item = byId.get(garmentId);
-          if (!item) continue;
-          try {
-            thumbs.push(await sharp(await readFile(garmentFile(item))).resize(120, 120, { fit: "inside" }).png().toBuffer());
-          } catch {}
-        }
-        const escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        const label = `<svg width="1080" height="1400"><style>text{font-family:Helvetica,Arial,sans-serif;fill:#191919}</style><text x="40" y="1245" font-size="42" font-weight="600">${escape(record.name)}</text><text x="40" y="1290" font-size="24" fill="#66625d">${escape([record.mood ? `feels ${record.mood}` : "", ...(record.occasion || [])].filter(Boolean).join(" · "))}</text><text x="40" y="1360" font-size="20" letter-spacing="4" fill="#66625d">FASHION INTEL</text></svg>`;
-        const composites = [
-          { input: photo, left: 40, top: 40 },
-          ...thumbs.map((thumb, index) => ({ input: thumb, left: 40 + (index * 140), top: 1080 })),
-          { input: Buffer.from(label), left: 0, top: 0 },
-        ];
-        const card = await sharp({ create: { width: 1080, height: 1400, channels: 3, background: { r: 244, g: 240, b: 232 } } })
-          .composite(composites)
-          .png()
-          .toBuffer();
+        const card = await buildLookCard(record);
         res.setHeader("Content-Type", "image/png");
-        res.setHeader("Content-Disposition", `inline; filename="fashion-intel-${record.id.slice(0, 8)}.png"`);
+        res.setHeader("Content-Disposition", `inline; filename="mira-${record.id.slice(0, 8)}.png"`);
         res.setHeader("Cache-Control", "no-store");
         return res.end(card);
+      }
+      if (match[2] === "share" && req.method === "POST") {
+        if (record.status !== "ready" || !record.image) return json(res, 409, { error: "Finish the look before sharing it." });
+        const shares = await loadShares();
+        let share = shares.find((entry) => entry.type === "look" && entry.outfitId === record.id);
+        if (!share) {
+          share = { token: randomBytes(18).toString("base64url"), type: "look", outfitId: record.id, createdAt: new Date().toISOString() };
+          await atomicJson(sharesFile, [...shares, share]);
+        }
+        return json(res, 200, { token: share.token, path: `/s/${share.token}` });
       }
       if (match[2] === "remix" && req.method === "POST") {
         if (record.status !== "ready" || !record.garmentIds?.length) return json(res, 409, { error: "Only a finished look can be remixed." });
@@ -540,6 +689,7 @@ export function outfitStudioApi(options = {}) {
       outfitImagesDir = path.join(dataDir, "outfit-images");
       inspirationDir = path.join(dataDir, "inspiration");
       profileFile = path.join(dataDir, "profile.json");
+      sharesFile = path.join(dataDir, "shares.json");
       libraryFile = path.join(dataDir, "library.json");
       importedDir = path.join(dataDir, "imported");
       await mkdir(dataDir, { recursive: true });

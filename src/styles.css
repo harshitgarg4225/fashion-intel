@@ -1454,3 +1454,77 @@ button { font: inherit; }
 .item-flag { border-radius: 0; background: #fdfcf9; }
 
 .tile-frame { position: relative; }
+
+/* Welcome card + tray emphasis */
+
+.welcome-card {
+  max-width: 560px;
+  margin: 56px auto 0;
+  border: 1px solid var(--line);
+  background: #fdfcf9;
+  padding: 44px 44px 38px;
+  text-align: center;
+  animation: lux-rise 600ms 160ms var(--ease-lux) both;
+}
+
+.welcome-card h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 560;
+}
+
+.welcome-card ol {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  counter-reset: step;
+}
+
+.welcome-card ol li {
+  counter-increment: step;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+  padding-left: 40px;
+  position: relative;
+}
+
+.welcome-card ol li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.welcome-card ol li strong { color: var(--ink); }
+
+.welcome-hint {
+  margin: 24px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@keyframes tray-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(157, 123, 79, .45); }
+  50% { box-shadow: 0 0 0 12px rgba(157, 123, 79, 0); }
+}
+
+.import-tray.is-emphasized .import-tray__button {
+  animation: tray-pulse 2.2s var(--ease-lux) infinite;
+}

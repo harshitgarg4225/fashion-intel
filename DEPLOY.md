@@ -1,6 +1,6 @@
-# Deploying Fashion Intel on Railway
+# Deploying Mira on Railway
 
-Fashion Intel runs as a single Node service (Vite build + `vite preview` serving the app and all `/api` middleware). This guide takes you from zero to a working deployment.
+Mira runs as a single Node service (Vite build + `vite preview` serving the app and all `/api` middleware). This guide takes you from zero to a working deployment.
 
 ## 1. Provision the third-party APIs (one time)
 
@@ -32,6 +32,7 @@ GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 WARDROBE_DAILY_BUDGET=5                   # recommended spend ceiling (USD/day)
 WARDROBE_HEMISPHERE=north                 # season logic; use south below the equator
+WARDROBE_ABOUT_URL=                       # optional: where share pages' CTA points (default: this repo)
 ```
 
 4. **Generate a domain** (Settings → Networking → Generate Domain), then put that exact domain into the Google OAuth redirect URI (step 1) if you use Google Photos.

@@ -17,7 +17,7 @@ class ErrorBoundary extends React.Component {
     return (
       <div className="auth-gate">
         <div style={{ textAlign: "center", maxWidth: 380 }}>
-          <h1 style={{ fontFamily: "var(--serif)", letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 560 }}>Fashion Intel</h1>
+          <h1 style={{ fontFamily: "var(--serif)", letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 560 }}>Mira</h1>
           <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.6 }}>Something went wrong on this screen. Your closet is safe.</p>
           <button
             type="button"

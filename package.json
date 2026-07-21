@@ -1,8 +1,8 @@
 {
-  "name": "fashion-intel",
+  "name": "mira",
   "version": "1.0.0",
   "private": true,
-  "description": "Fashion Intel: your wardrobe, digitized and styled with AI. Built on tandpfun/wardrobe (MIT).",
+  "description": "Mira: dress how you feel. AI wardrobe + personal stylist rendered on you. Built on tandpfun/wardrobe (MIT).",
   "license": "MIT",
   "type": "module",
   "scripts": {

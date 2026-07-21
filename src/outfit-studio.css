@@ -612,3 +612,6 @@
 .style-profile summary::-webkit-details-marker { display: none; }
 .style-profile summary::before { content: "+"; margin-right: 8px; color: var(--accent); }
 .style-profile[open] summary::before { content: "–"; }
+
+.status.manual-share { font-size: 14px; font-style: normal; font-family: inherit; }
+.status.manual-share a { color: var(--accent); word-break: break-all; }

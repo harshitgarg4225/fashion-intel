@@ -1,6 +1,6 @@
-# Fashion Intel — Product Roadmap
+# Mira — Product Roadmap
 
-The product promise: **"I want to feel X today" → open the app → see yourself dressed for that feeling, from clothes you actually own.**
+The product promise: **"I want to feel X today" → open Mira → see yourself dressed for that feeling, from clothes you actually own.**
 
 Legend: ✅ shipped · 🔜 next up · 🧭 explored / needs design
 
@@ -100,6 +100,8 @@ Legend: ✅ shipped · 🔜 next up · 🧭 explored / needs design
 - ✅ Generation concurrency cap to bound API spend from a stuck client
 - ✅ All personal data (`data/`, `.env`) gitignored
 - ✅ Passphrase gate (`WARDROBE_PASSPHRASE`): timing-safe cookie sessions guarding every /api route — required for public deploys
+- ✅ Login lockout: 8 failed attempts locks the client for 10 minutes, keyed on a proxy-trustworthy client IP (spoof-resistant), with decay so the rightful owner recovers
+- ✅ Public share pages hardened: quote-safe escaping, strict Content-Security-Policy (no scripts can run), POST-only share creation (CSRF-safe), rate limiting on the anonymous surface
 - ✅ Google token encrypted at rest (AES-256-GCM, key derived from the passphrase) when a passphrase is set
 - ✅ "Export & wipe": `npm run backup` archives data/, `npm run backup:wipe` archives then deletes everything local
 - ✅ Audit log: every external AI call recorded in `data/audit.jsonl` (provider, purpose, image count, timestamp)

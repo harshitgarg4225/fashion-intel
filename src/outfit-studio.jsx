@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowCounterClockwise, ArrowsClockwise, CloudSun, CoatHanger, Heart, ImageSquare, Sparkle, SpinnerGap, ThumbsDown, ThumbsUp, Trash, WarningCircle, X } from "@phosphor-icons/react";
 import { OptimizedImage } from "./OptimizedImage.jsx";
+import { deliverShare } from "./share-utils.js";
 import "./outfit-studio.css";
 
 const API = "/api/outfits";
@@ -155,7 +156,7 @@ function VerdictControls({ outfit, onVerdict }) {
   );
 }
 
-function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite, onWear, onVerdict, onVariation, onRemix }) {
+function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite, onWear, onVerdict, onVariation, onRemix, onShare, sharedId }) {
   const active = ACTIVE_STATUSES.has(outfit.status);
   const garments = (outfit.garmentIds || []).map((id) => itemsById.get(id)).filter(Boolean);
   const wearCount = outfit.wornAt?.length || 0;
@@ -225,7 +226,7 @@ function OutfitCard({ outfit, itemsById, onRetry, onDelete, onToggleFavorite, on
               {garments.some((item) => item.part === "lowerbody") && (
                 <button type="button" className="outfit-swap" onClick={() => onRemix(outfit.id, "bottom")}>Swap bottom</button>
               )}
-              <a className="outfit-swap" href={`/api/outfits/${outfit.id}/card.png`} target="_blank" rel="noreferrer" title="Open a shareable card of this look">Share</a>
+              <button type="button" className="outfit-swap" onClick={() => onShare(outfit)} title="Create a public share link for this look">{sharedId === outfit.id ? "Link copied" : "Share"}</button>
             </>
           )}
           {outfit.status === "failed" && (
@@ -374,6 +375,27 @@ export function OutfitStudio({ items, initialMood = null }) {
     }
   };
 
+  const [sharedId, setSharedId] = useState(null);
+  const [manualShareUrl, setManualShareUrl] = useState(null);
+
+  const shareOutfit = async (outfit) => {
+    setError("");
+    setManualShareUrl(null);
+    try {
+      const share = await api(`${API}/${outfit.id}/share`, { method: "POST" });
+      const shareUrl = `${window.location.origin}${share.path}`;
+      const delivery = await deliverShare({ title: `${outfit.name} — styled by Mira`, url: shareUrl });
+      if (delivery.status === "shared" || delivery.status === "copied") {
+        setSharedId(outfit.id);
+        setTimeout(() => setSharedId(null), 2500);
+      } else if (delivery.status === "manual") {
+        setManualShareUrl(shareUrl);
+      }
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
   const remixOutfit = async (id, slot) => {
     setError("");
     try {
@@ -477,6 +499,7 @@ export function OutfitStudio({ items, initialMood = null }) {
       </div>
 
       {setupMessage && <p className="status">{setupMessage}</p>}
+      {manualShareUrl && <p className="status manual-share">Your public link: <a href={manualShareUrl} target="_blank" rel="noreferrer">{manualShareUrl}</a></p>}
       {error && <p className="status error">{error}</p>}
       {!error && loading && <p className="status">Loading outfits</p>}
       {!loading && !sortedOutfits.length && !setupMessage && (
@@ -497,6 +520,8 @@ export function OutfitStudio({ items, initialMood = null }) {
               onVerdict={(entry, verdict, reason) => patchOutfit(entry.id, { verdict, verdictReason: reason })}
               onVariation={(entry) => createLook({ lookMood: entry.mood, lookDirection: entry.direction || "", count: 1 })}
               onRemix={remixOutfit}
+              onShare={shareOutfit}
+              sharedId={sharedId}
             />
           ))}
         </div>
