@@ -22,6 +22,10 @@ Dress how you feel.
 
 Everything stays local: originals, cutouts, renders, outfits, and the JSON database live in `data/` on your machine. See [ROADMAP.md](ROADMAP.md) for the full product plan.
 
+## Host it for others (multi-tenant)
+
+Flip `MIRA_MULTI_TENANT=true` (plus `MIRA_SESSION_SECRET` and your Google OAuth client) and the same deployment becomes a hosted product: **Continue with Google** sign-in, a fully private closet per account, operator-held API keys, and per-user render credits. Details in [DEPLOY.md](DEPLOY.md).
+
 ## Deploy it (Railway)
 
 The app ships production-ready for Railway: `railway.json` is included, the server binds Railway's `PORT` automatically, `/data` volume support keeps your closet across deploys, and `WARDROBE_PASSPHRASE` gates the whole API behind a login (required for any public deployment — it also encrypts the Google token at rest). The complete checklist — including provisioning every third-party API key — is in **[DEPLOY.md](DEPLOY.md)**.

@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { clientIp, isTrustedProxy } from "./request-utils.mjs";
+import { isMultiTenant } from "./tenant.mjs";
 
 // Cookie-session gate for every /api route. Active only when
 // WARDROBE_PASSPHRASE is set in the environment (deliberately env-only:
@@ -85,6 +86,7 @@ export function authApi(options = {}) {
     if (url.pathname === "/api/health" && req.method === "GET") {
       return json(res, 200, { ok: true });
     }
+    if (isMultiTenant(options.env)) return next();
     const required = Boolean(passphrase());
     if (url.pathname === "/api/auth/status" && req.method === "GET") {
       const authed = !required || safeEqual(cookieValue(req), sessionTokenFor(passphrase()));

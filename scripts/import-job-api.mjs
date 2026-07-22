@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { structuredAnalysis } from "./ai-providers.mjs";
 import { audit, checkImageBudget, initTelemetry, recordUsage } from "./telemetry.mjs";
 import { initSettingsStore, makeSetting, saveStoredSettings, storedKeyStatus, STORABLE_KEYS } from "./settings-store.mjs";
+import { checkRenderCredits, initTenancy, isMultiTenant, tenantDataDir, tenantStorage, userDirFor } from "./tenant.mjs";
 
 const API_ROOT = "/api/import/jobs";
 const ASSET_ROOT = "/api/import/assets";
@@ -358,6 +359,7 @@ async function geminiEdit({ key, baseUrl, model, prompt, images, size }) {
 // Dispatches to the configured image provider. gpt-image is the default;
 // set WARDROBE_IMAGE_PROVIDER=gemini plus GEMINI_API_KEY to switch.
 export async function imageEdit({ setting, modelSetting, prompt, images, size, background }) {
+  await checkRenderCredits();
   if (setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase() === "gemini") {
     const key = setting("GEMINI_API_KEY").trim();
     if (!key) throw new Error("GEMINI_API_KEY is not configured");
@@ -434,9 +436,14 @@ Identity filter: The FIRST image is the photo to catalog. The SECOND image is a 
 
 export function wardrobeImportApi(options = {}) {
   let root;
-  let jobsDir;
-  let importedFile;
-  let libraryAssetDir;
+  let baseDataDir;
+  const dataDir = () => tenantDataDir() || baseDataDir;
+  const jobsDirFn = () => path.join(dataDir(), "jobs");
+  const importedFileFn = () => path.join(dataDir(), "library.json");
+  const libraryAssetDirFn = () => path.join(dataDir(), "imported");
+  const referencePathFn = () => tenantStorage.getStore()
+    ? path.join(dataDir(), "model-reference.png")
+    : path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png"));
   const running = new Map();
   const setting = makeSetting(options);
 
@@ -484,7 +491,7 @@ export function wardrobeImportApi(options = {}) {
     const jobs = [];
     for (const metadata of detected) {
       const id = randomUUID();
-      const dir = path.join(jobsDir, id); await mkdir(dir, { recursive: true });
+      const dir = path.join(jobsDirFn(), id); await mkdir(dir, { recursive: true });
       const originalFile = "original.png";
       const cropFile = "crop.png";
       const croppedImage = await cropDetectedItem(normalizedImage, metadata.boundingBox);
@@ -501,35 +508,35 @@ export function wardrobeImportApi(options = {}) {
 
   async function loadJob(id) {
     if (!/^[a-f0-9-]{36}$/i.test(id)) return null;
-    try { return JSON.parse(await readFile(path.join(jobsDir, id, "job.json"), "utf8")); }
+    try { return JSON.parse(await readFile(path.join(jobsDirFn(), id, "job.json"), "utf8")); }
     catch (error) { if (error.code === "ENOENT") return null; throw error; }
   }
 
   async function saveJob(job) {
     job.updatedAt = new Date().toISOString();
-    await atomicJson(path.join(jobsDir, job.id, "job.json"), job);
+    await atomicJson(path.join(jobsDirFn(), job.id, "job.json"), job);
   }
 
   async function loadImported() {
-    try { return JSON.parse(await readFile(importedFile, "utf8")); }
+    try { return JSON.parse(await readFile(importedFileFn(), "utf8")); }
     catch (error) { if (error.code === "ENOENT") return []; throw error; }
   }
 
   async function persistImported(job, includeModeled = false) {
     const id = `import-${job.id}`;
-    await mkdir(libraryAssetDir, { recursive: true });
+    await mkdir(libraryAssetDirFn(), { recursive: true });
     const garmentName = `${id}-garment.png`;
     const garmentSource = job.stages.garment.assetUrl
       ? path.basename(new URL(job.stages.garment.assetUrl, "http://localhost").pathname)
       : `garment-${job.stages.garment.attempts}.png`;
-    await copyFile(path.join(jobsDir, job.id, garmentSource), path.join(libraryAssetDir, garmentName));
+    await copyFile(path.join(jobsDirFn(), job.id, garmentSource), path.join(libraryAssetDirFn(), garmentName));
     let modeledImage = null;
     if (includeModeled) {
       const modeledName = `${id}-modeled.png`;
       const modeledSource = job.stages.modeled.assetUrl
         ? path.basename(new URL(job.stages.modeled.assetUrl, "http://localhost").pathname)
         : `modeled-${job.stages.modeled.attempts}.png`;
-      await copyFile(path.join(jobsDir, job.id, modeledSource), path.join(libraryAssetDir, modeledName));
+      await copyFile(path.join(jobsDirFn(), job.id, modeledSource), path.join(libraryAssetDirFn(), modeledName));
       modeledImage = `${LIBRARY_ASSET_ROOT}/${modeledName}`;
     }
     const metadata = job.metadata || {};
@@ -538,7 +545,7 @@ export function wardrobeImportApi(options = {}) {
     let hash = existing?.hash || null;
     let duplicateOf = existing?.duplicateOf || null;
     try {
-      hash = await imageHash(await readFile(path.join(libraryAssetDir, garmentName)));
+      hash = await imageHash(await readFile(path.join(libraryAssetDirFn(), garmentName)));
       const match = records.find((record) => record.id !== id && record.hash && hashDistance(record.hash, hash) <= 6);
       duplicateOf = match ? match.id : null;
     } catch {}
@@ -562,7 +569,7 @@ export function wardrobeImportApi(options = {}) {
       importJobId: job.id,
     };
     const next = [...records.filter((item) => item.id !== id), record];
-    await atomicJson(importedFile, next);
+    await atomicJson(importedFileFn(), next);
     return record;
   }
 
@@ -577,7 +584,7 @@ export function wardrobeImportApi(options = {}) {
       let failedAssetUrl = null;
       let chromaKeyUsed = null;
       try {
-        const dir = path.join(jobsDir, current.id);
+        const dir = path.join(jobsDirFn(), current.id);
         const output = path.join(dir, `${stageName}-${stage.attempts}.png`);
         await checkImageBudget(setting);
         const sourceFile = stageName === "garment" && current.internal.cropFile ? current.internal.cropFile : current.internal.originalFile;
@@ -597,7 +604,7 @@ export function wardrobeImportApi(options = {}) {
             : `garment-${current.stages.garment.attempts}.png`;
           const garmentFile = path.join(dir, garmentName);
           const garment = { data: await readFile(garmentFile), mime: "image/png", name: "garment.png" };
-          const modelPath = path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png"));
+          const modelPath = referencePathFn();
           let modelData;
           try {
             modelData = await readFile(modelPath);
@@ -663,8 +670,11 @@ export function wardrobeImportApi(options = {}) {
         if (input.duplicateOf === null) record.duplicateOf = null;
         record.palette = [record.color, record.secondaryColor].filter(Boolean);
         records[index] = record;
-        await atomicJson(importedFile, records);
+        await atomicJson(importedFileFn(), records);
         return json(res, 200, record);
+      }
+      if (url.pathname.startsWith("/api/setup/keys") && isMultiTenant(options.env)) {
+        return json(res, 403, { error: "API keys are managed by the operator on this deployment." });
       }
       if (url.pathname === "/api/setup/keys" && req.method === "GET") {
         const env = Object.fromEntries([...STORABLE_KEYS].map((name) => [name, Boolean((options.env?.[name] || process.env[name] || "").trim())]));
@@ -679,7 +689,7 @@ export function wardrobeImportApi(options = {}) {
         const input = await body(req);
         const image = decodeImage(input);
         const normalized = await normalizeImage(image.data);
-        const referencePath = path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png"));
+        const referencePath = referencePathFn();
         await mkdir(path.dirname(referencePath), { recursive: true });
         await writeFile(referencePath, normalized, { mode: 0o600 });
         return json(res, 200, await setupStatus());
@@ -689,16 +699,16 @@ export function wardrobeImportApi(options = {}) {
         const records = await loadImported();
         const next = records.filter((record) => record.id !== id);
         if (next.length === records.length) return json(res, 404, { error: "Imported wardrobe item not found" });
-        await atomicJson(importedFile, next);
+        await atomicJson(importedFileFn(), next);
         await Promise.all([
-          rm(path.join(libraryAssetDir, `${id}-garment.png`), { force: true }),
-          rm(path.join(libraryAssetDir, `${id}-modeled.png`), { force: true }),
+          rm(path.join(libraryAssetDirFn(), `${id}-garment.png`), { force: true }),
+          rm(path.join(libraryAssetDirFn(), `${id}-modeled.png`), { force: true }),
         ]);
         return json(res, 200, { deleted: true, id });
       }
       const libraryAssetMatch = url.pathname.match(/^\/api\/import\/library\/([\w.-]+)$/i);
       if (libraryAssetMatch && req.method === "GET") {
-        const file = path.join(libraryAssetDir, path.basename(libraryAssetMatch[1]));
+        const file = path.join(libraryAssetDirFn(), path.basename(libraryAssetMatch[1]));
         await stat(file);
         res.setHeader("Content-Type", "image/png");
         res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
@@ -706,7 +716,7 @@ export function wardrobeImportApi(options = {}) {
       }
       const assetMatch = url.pathname.match(/^\/api\/import\/assets\/([a-f0-9-]{36})\/([\w.-]+)$/i);
       if (assetMatch && req.method === "GET") {
-        const file = path.join(jobsDir, assetMatch[1], path.basename(assetMatch[2]));
+        const file = path.join(jobsDirFn(), assetMatch[1], path.basename(assetMatch[2]));
         await stat(file);
         res.setHeader("Content-Type", file.endsWith(".svg") ? "image/svg+xml" : "image/png");
         res.setHeader("Cache-Control", "no-store");
@@ -758,10 +768,10 @@ export function wardrobeImportApi(options = {}) {
         return json(res, 202, { queued: files.length, skipped: found.length - files.length });
       }
       if (url.pathname === API_ROOT && req.method === "GET") {
-        const ids = await readdir(jobsDir).catch(() => []);
+        const ids = await readdir(jobsDirFn()).catch(() => []);
         const loadedJobs = (await Promise.all(ids.map((id) => loadJob(id)))).filter(Boolean);
         const hiddenJobs = loadedJobs.filter((job) => job.status === "complete" || job.stages.crop?.status === "rejected" || job.stages.garment.status === "rejected" || job.stages.modeled.status === "rejected");
-        await Promise.all(hiddenJobs.map((job) => rm(path.join(jobsDir, job.id), { recursive: true, force: true })));
+        await Promise.all(hiddenJobs.map((job) => rm(path.join(jobsDirFn(), job.id), { recursive: true, force: true })));
         const jobs = loadedJobs.filter((job) => !hiddenJobs.includes(job)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
         return json(res, 200, jobs.map(publicJob));
       }
@@ -772,7 +782,7 @@ export function wardrobeImportApi(options = {}) {
       const action = match[2] || "";
       if (!action && req.method === "GET") return json(res, 200, publicJob(job));
       if (!action && req.method === "DELETE") {
-        await rm(path.join(jobsDir, job.id), { recursive: true, force: true });
+        await rm(path.join(jobsDirFn(), job.id), { recursive: true, force: true });
         return json(res, 200, { deleted: true, id: job.id });
       }
       if (action === "metadata" && (req.method === "PATCH" || req.method === "PUT")) {
@@ -790,12 +800,12 @@ export function wardrobeImportApi(options = {}) {
         const input = await body(req);
         const tolerance = cleanupTolerance(input.tolerance);
         const sourceName = path.basename(new URL(stage.failedAssetUrl, "http://localhost").pathname);
-        const source = await readFile(path.join(jobsDir, job.id, sourceName));
+        const source = await readFile(path.join(jobsDirFn(), job.id, sourceName));
         const key = stage.chromaKey || chooseChromaKey(job.metadata?.color);
         const cleaned = await processChromaBackground(source, key, { tolerance });
         const previewName = `garment-${stage.attempts}-cleanup-${tolerance}.png`;
         const previewUrl = `${ASSET_ROOT}/${job.id}/${previewName}`;
-        await writeFile(path.join(jobsDir, job.id, previewName), cleaned.bytes);
+        await writeFile(path.join(jobsDirFn(), job.id, previewName), cleaned.bytes);
         stage.chromaKey = key;
         stage.cleanupTolerance = cleaned.tolerance;
         stage.cleanupDiagnostics = cleaned.verification;
@@ -847,11 +857,11 @@ export function wardrobeImportApi(options = {}) {
             throw error;
           }
         }
-        if (decision === "reject") await rm(path.join(jobsDir, job.id), { recursive: true, force: true });
+        if (decision === "reject") await rm(path.join(jobsDirFn(), job.id), { recursive: true, force: true });
         if (startGarment) void generate(job, "garment");
         if (startModeled) void generate(job, "modeled");
         const response = publicJob(job);
-        if (job.status === "complete") await rm(path.join(jobsDir, job.id), { recursive: true, force: true });
+        if (job.status === "complete") await rm(path.join(jobsDirFn(), job.id), { recursive: true, force: true });
         return json(res, 200, response);
       }
       return json(res, 404, { error: "Not found" });
@@ -866,52 +876,60 @@ export function wardrobeImportApi(options = {}) {
     apply: "serve",
     async configResolved(config) {
       root = config.root;
-      const dataDir = path.resolve(root, setting("WARDROBE_DATA_DIR", "data"));
-      jobsDir = path.join(dataDir, "jobs");
-      importedFile = path.join(dataDir, "library.json");
-      libraryAssetDir = path.join(dataDir, "imported");
-      await mkdir(jobsDir, { recursive: true });
-      await mkdir(libraryAssetDir, { recursive: true });
-      initTelemetry(dataDir);
-      await initSettingsStore(dataDir);
+      baseDataDir = path.resolve(root, setting("WARDROBE_DATA_DIR", "data"));
+      initTenancy(baseDataDir);
+      await mkdir(jobsDirFn(), { recursive: true });
+      await mkdir(libraryAssetDirFn(), { recursive: true });
+      initTelemetry(baseDataDir);
+      await initSettingsStore(baseDataDir);
       if (options.bridge) {
         options.bridge.createJobsFromImage = createJobsFromImage;
         options.bridge.setupStatus = setupStatus;
       }
-      const ids = await readdir(jobsDir).catch(() => []);
-      for (const id of ids) {
-        const job = await loadJob(id);
-        if (!job) continue;
-        if (job.status === "complete") {
-          try {
-            await persistImported(job, true);
-            await rm(path.join(jobsDir, job.id), { recursive: true, force: true });
-          } catch (error) {
-            job.status = "active";
-            job.stages.modeled.status = "review";
-            job.stages.modeled.decision = null;
-            job.stages.modeled.error = null;
-            await saveJob(job);
+      const recoverJobs = async () => {
+      const ids = await readdir(jobsDirFn()).catch(() => []);
+        for (const id of ids) {
+          const job = await loadJob(id);
+          if (!job) continue;
+          if (job.status === "complete") {
+            try {
+              await persistImported(job, true);
+              await rm(path.join(jobsDirFn(), job.id), { recursive: true, force: true });
+            } catch (error) {
+              job.status = "active";
+              job.stages.modeled.status = "review";
+              job.stages.modeled.decision = null;
+              job.stages.modeled.error = null;
+              await saveJob(job);
+            }
+            continue;
           }
-          continue;
+          if (job.stages.crop?.status === "rejected" || job.stages.garment.status === "rejected" || job.stages.modeled.status === "rejected") {
+            await rm(path.join(jobsDirFn(), job.id), { recursive: true, force: true });
+            continue;
+          }
+          if (job.stages.crop && job.stages.crop.status !== "approved") continue;
+          if (["processing", "queued"].includes(job.stages.garment.status)) {
+            job.stages.garment.status = "pending";
+            await saveJob(job);
+            void generate(job, "garment");
+          } else if (job.stages.garment.status === "approved" && ["pending", "processing", "queued"].includes(job.stages.modeled.status)) {
+            job.stages.modeled.status = "pending";
+            await saveJob(job);
+            void generate(job, "modeled");
+          }
         }
-        if (job.stages.crop?.status === "rejected" || job.stages.garment.status === "rejected" || job.stages.modeled.status === "rejected") {
-          await rm(path.join(jobsDir, job.id), { recursive: true, force: true });
-          continue;
-        }
-        if (job.stages.crop && job.stages.crop.status !== "approved") continue;
-        if (["processing", "queued"].includes(job.stages.garment.status)) {
-          job.stages.garment.status = "pending";
-          await saveJob(job);
-          void generate(job, "garment");
-        } else if (job.stages.garment.status === "approved" && ["pending", "processing", "queued"].includes(job.stages.modeled.status)) {
-          job.stages.modeled.status = "pending";
-          await saveJob(job);
-          void generate(job, "modeled");
-        }
+      };
+      const tenantDirs = [baseDataDir];
+      if (isMultiTenant(options.env)) {
+        const userIds = await readdir(path.join(baseDataDir, "users")).catch(() => []);
+        tenantDirs.push(...userIds.map((id) => userDirFor(baseDataDir, id)));
+      }
+      for (const dir of tenantDirs) {
+        await tenantStorage.run({ userDir: dir }, recoverJobs);
       }
     },
-    configureServer(server) { server.middlewares.use(handler); },
+        configureServer(server) { server.middlewares.use(handler); },
     configurePreviewServer(server) { server.middlewares.use(handler); },
   };
 }

@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync }
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { makeSetting } from "./settings-store.mjs";
+import { tenantDataDir } from "./tenant.mjs";
 
 const API_ROOT = "/api/google";
 const SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly";
@@ -17,7 +18,8 @@ function json(res, status, value) {
 
 export function googlePhotosApi(options = {}) {
   let root;
-  let tokenFile;
+  let baseTokenDir;
+  const tokenFileFn = () => path.join(tenantDataDir() || baseTokenDir, "google-token.json");
   const bridge = options.bridge || {};
   const pendingStates = new Set();
   const setting = makeSetting(options);
@@ -52,7 +54,7 @@ export function googlePhotosApi(options = {}) {
   const configured = () => Boolean(setting("GOOGLE_CLIENT_ID").trim() && setting("GOOGLE_CLIENT_SECRET").trim());
 
   async function loadToken() {
-    try { return openToken(await readFile(tokenFile, "utf8")); }
+    try { return openToken(await readFile(tokenFileFn(), "utf8")); }
     catch (error) { if (error.code === "ENOENT") return null; throw error; }
   }
 
@@ -62,8 +64,8 @@ export function googlePhotosApi(options = {}) {
       refresh_token: payload.refresh_token || previous?.refresh_token || null,
       expires_at: Date.now() + (Math.max(60, Number(payload.expires_in) || 3600) - 30) * 1000,
     };
-    await mkdir(path.dirname(tokenFile), { recursive: true });
-    await writeFile(tokenFile, `${sealToken(record)}\n`, { mode: 0o600 });
+    await mkdir(path.dirname(tokenFileFn()), { recursive: true });
+    await writeFile(tokenFileFn(), `${sealToken(record)}\n`, { mode: 0o600 });
     return record;
   }
 
@@ -84,7 +86,7 @@ export function googlePhotosApi(options = {}) {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
-      await rm(tokenFile, { force: true });
+      await rm(tokenFileFn(), { force: true });
       throw Object.assign(new Error("Google Photos access could not be refreshed. Reconnect to continue."), { status: 401 });
     }
     token = await saveToken(result, token);
@@ -153,7 +155,7 @@ export function googlePhotosApi(options = {}) {
         return res.end();
       }
       if (url.pathname === `${API_ROOT}/disconnect` && req.method === "POST") {
-        await rm(tokenFile, { force: true });
+        await rm(tokenFileFn(), { force: true });
         return json(res, 200, { disconnected: true });
       }
       if (url.pathname === `${API_ROOT}/picker/session` && req.method === "POST") {
@@ -214,7 +216,7 @@ export function googlePhotosApi(options = {}) {
     apply: "serve",
     configResolved(config) {
       root = config.root;
-      tokenFile = path.join(path.resolve(root, setting("WARDROBE_DATA_DIR", "data")), "google-token.json");
+      baseTokenDir = path.resolve(root, setting("WARDROBE_DATA_DIR", "data"));
     },
     configureServer(server) { server.middlewares.use(handler); },
     configurePreviewServer(server) { server.middlewares.use(handler); },

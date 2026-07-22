@@ -6,6 +6,52 @@ import { OutfitStudio } from "./outfit-studio.jsx";
 import { Insights } from "./insights.jsx";
 import { Journal } from "./journal.jsx";
 
+function AuthGate({ mode }) {
+  if (mode === "google") {
+    return (
+      <div className="auth-gate">
+        <div className="auth-card">
+          <h1>Mira</h1>
+          <p>Your closet, styled by feeling. Sign in to begin.</p>
+          <a className="google-signin" href="/auth/google">Continue with Google</a>
+          <p className="auth-fineprint">Your photos and closet are private to your account.</p>
+        </div>
+      </div>
+    );
+  }
+  return <PassphraseGate />;
+}
+
+function AccountChip() {
+  const [me, setMe] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/me", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then(setMe)
+      .catch(() => {});
+  }, []);
+
+  if (!me) return null;
+  const creditsLeft = Math.max(0, (me.credits ?? 0) - (me.rendersUsed ?? 0));
+
+  return (
+    <div className="account-chip">
+      <span>{me.name || me.email}</span>
+      <span className="account-credits">{creditsLeft} renders left</span>
+      <button
+        type="button"
+        onClick={async () => {
+          await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+          window.location.reload();
+        }}
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
+
 function PassphraseGate() {
   const [passphrase, setPassphrase] = useState("");
   const [error, setError] = useState("");
@@ -668,11 +714,16 @@ export function App() {
   const setView = (nextView) => setViewState((current) => ({ ...current, view: nextView }));
   const [query, setQuery] = useState("");
   const [authRequired, setAuthRequired] = useState(false);
+  const [authMode, setAuthMode] = useState("passphrase");
 
   useEffect(() => {
     fetch("/api/import/wardrobe", { cache: "no-store" })
       .then((response) => {
         if (response.status === 401) {
+          fetch("/api/auth/status", { cache: "no-store" })
+            .then((statusResponse) => statusResponse.json())
+            .then((status) => setAuthMode(status.mode || "passphrase"))
+            .catch(() => {});
           setAuthRequired(true);
           throw new Error("Sign in to see your wardrobe.");
         }
@@ -795,7 +846,7 @@ export function App() {
     setItems((current) => current.map((item) => item.id === id ? { ...item, modeledImage } : item));
   }, []);
 
-  if (authRequired) return <PassphraseGate />;
+  if (authRequired) return <AuthGate mode={authMode} />;
 
   return (
     <div className={`app-shell${selectedItem ? " has-selection" : ""}`}>
@@ -803,6 +854,7 @@ export function App() {
         <header className="masthead">
           <p className="masthead-eyebrow">Dress how you feel</p>
           <h1 className="wordmark">Mira</h1>
+          <AccountChip />
           <nav className="view-switch" aria-label="Choose view">
             <button type="button" className={view === "closet" ? "active" : ""} onClick={() => setView("closet")} aria-pressed={view === "closet"}>Closet</button>
             <button type="button" className={view === "outfits" ? "active" : ""} onClick={() => setView("outfits")} aria-pressed={view === "outfits"}>Outfit Studio</button>

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isMultiTenant } from "./tenant.mjs";
 
 // Keys the in-app setup screen may store in data/settings.json.
 // Environment variables always win over stored values.
@@ -45,5 +46,10 @@ export function storedKeyStatus() {
 }
 
 export function makeSetting(options = {}) {
+  // In multi-tenant mode only environment configuration counts — per-instance
+  // stored keys would leak across users.
+  if (isMultiTenant(options.env)) {
+    return (name, fallback = "") => options.env?.[name] || process.env[name] || fallback;
+  }
   return (name, fallback = "") => options.env?.[name] || process.env[name] || storedSetting(name) || fallback;
 }

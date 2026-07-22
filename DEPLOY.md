@@ -48,3 +48,22 @@ With `WARDROBE_PASSPHRASE` set, every `/api` route (your photos, closet, tokens,
 - **Backups**: Railway volumes persist across deploys, but you can also run `npm run backup` locally against a copy, or download `/data` via `railway ssh`.
 - **Costs**: image generation is the dominant cost (~$0.10–0.25 per render depending on model/quality). `WARDROBE_DAILY_BUDGET` hard-stops generation past your ceiling; the studio shows today's estimated spend.
 - **Local dev is unchanged**: `npm run dev` binds 127.0.0.1 without a passphrase.
+
+## 5. Multi-tenant mode (onboard customers)
+
+Set these additional variables to turn the same deployment into a hosted product with Google sign-in and per-user closets:
+
+```
+MIRA_MULTI_TENANT=true
+MIRA_SESSION_SECRET=<random 32+ chars>
+MIRA_FREE_RENDERS=25
+GOOGLE_CLIENT_ID=...            # same OAuth client as Photos import
+GOOGLE_CLIENT_SECRET=...
+```
+
+Add `https://YOUR-DOMAIN/auth/google/callback` as a second authorized redirect URI on the Google OAuth client. In this mode:
+
+- Visitors see **Continue with Google**; each account gets a private closet at `/data/users/<id>/` on the volume — imports, looks, journal, reference photo, usage, and audit are fully isolated per user.
+- **Your** env API keys serve all users; the in-app key screen is disabled. Each user gets `MIRA_FREE_RENDERS` lifetime render credits (raise a user's `credits` in `data/users.json` to grant more); `WARDROBE_DAILY_BUDGET` still caps each user's daily spend.
+- Share links keep working publicly across users; share management is scoped to the owning account.
+- The passphrase gate is replaced by SSO. Before charging money, add: terms/privacy pages, a data-deletion path, and billing — see ROADMAP.

@@ -1,13 +1,18 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { tenantDataDir } from "./tenant.mjs";
 
 // Rough per-call estimates (USD) used only for the local spend meter.
 const EST_COST = { image: 0.17, vision: 0.01 };
 
-let dataDir = null;
+let fallbackDir = null;
 
 export function initTelemetry(dir) {
-  dataDir = dir;
+  fallbackDir = dir;
+}
+
+function dataDir() {
+  return tenantDataDir() || fallbackDir;
 }
 
 function today() {
@@ -15,24 +20,24 @@ function today() {
 }
 
 export async function audit(event) {
-  if (!dataDir) return;
+  if (!dataDir()) return;
   try {
-    await mkdir(dataDir, { recursive: true });
-    await appendFile(path.join(dataDir, "audit.jsonl"), `${JSON.stringify({ ts: new Date().toISOString(), ...event })}\n`);
+    await mkdir(dataDir(), { recursive: true });
+    await appendFile(path.join(dataDir(), "audit.jsonl"), `${JSON.stringify({ ts: new Date().toISOString(), ...event })}\n`);
   } catch {}
 }
 
 async function loadUsage() {
-  if (!dataDir) return { days: {} };
+  if (!dataDir()) return { days: {} };
   try {
-    return JSON.parse(await readFile(path.join(dataDir, "usage.json"), "utf8"));
+    return JSON.parse(await readFile(path.join(dataDir(), "usage.json"), "utf8"));
   } catch {
     return { days: {} };
   }
 }
 
 export async function recordUsage(kind) {
-  if (!dataDir) return;
+  if (!dataDir()) return;
   try {
     const usage = await loadUsage();
     const day = usage.days[today()] || { visionCalls: 0, imageCalls: 0, estCostUsd: 0 };
@@ -40,10 +45,11 @@ export async function recordUsage(kind) {
     else day.visionCalls += 1;
     day.estCostUsd = Math.round((day.estCostUsd + (EST_COST[kind] || 0)) * 1000) / 1000;
     usage.days[today()] = day;
+    if (kind === "image") usage.totalImageCalls = (Number(usage.totalImageCalls) || 0) + 1;
     const keep = Object.keys(usage.days).sort().slice(-60);
     usage.days = Object.fromEntries(keep.map((key) => [key, usage.days[key]]));
-    await mkdir(dataDir, { recursive: true });
-    await writeFile(path.join(dataDir, "usage.json"), `${JSON.stringify(usage, null, 2)}\n`);
+    await mkdir(dataDir(), { recursive: true });
+    await writeFile(path.join(dataDir(), "usage.json"), `${JSON.stringify(usage, null, 2)}\n`);
   } catch {}
 }
 

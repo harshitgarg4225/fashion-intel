@@ -9,6 +9,7 @@ import { checkImageBudget, initTelemetry, usageToday } from "./telemetry.mjs";
 import { makeSetting } from "./settings-store.mjs";
 import { computeStreak } from "./wear-stats.mjs";
 import { clientIp, isTrustedProxy } from "./request-utils.mjs";
+import { baseDataDir, currentUser, isMultiTenant, runAsUser, tenantDataDir, tenantStorage, userDirFor } from "./tenant.mjs";
 
 const API_ROOT = "/api/outfits";
 const IMAGE_ROOT = "/api/outfits/images";
@@ -45,13 +46,19 @@ function decodeDataUrl(raw) {
 
 export function outfitStudioApi(options = {}) {
   let root;
-  let outfitsFile;
-  let outfitImagesDir;
-  let inspirationDir;
-  let profileFile;
-  let libraryFile;
-  let importedDir;
-  let sharesFile;
+  let localBaseDir;
+  const dataDir = () => tenantDataDir() || localBaseDir;
+  const outfitsFileFn = () => path.join(dataDir(), "outfits.json");
+  const outfitImagesDirFn = () => path.join(dataDir(), "outfit-images");
+  const inspirationDirFn = () => path.join(dataDir(), "inspiration");
+  const profileFileFn = () => path.join(dataDir(), "profile.json");
+  const libraryFileFn = () => path.join(dataDir(), "library.json");
+  const importedDirFn = () => path.join(dataDir(), "imported");
+  // Shares are resolved publicly across tenants, so the index is global.
+  const sharesFileFn = () => path.join(baseDataDir() || localBaseDir, "shares.json");
+  const referencePathFn = () => tenantStorage.getStore()
+    ? path.join(dataDir(), "model-reference.png")
+    : path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png"));
   const running = new Map();
   const shareHits = new Map();
   const setting = makeSetting(options);
@@ -72,7 +79,7 @@ export function outfitStudioApi(options = {}) {
   }
 
   async function loadShares() {
-    try { return JSON.parse(await readFile(sharesFile, "utf8")); }
+    try { return JSON.parse(await readFile(sharesFileFn(), "utf8")); }
     catch (error) { if (error.code === "ENOENT") return []; throw error; }
   }
 
@@ -89,12 +96,12 @@ export function outfitStudioApi(options = {}) {
   }
 
   async function loadOutfits() {
-    try { return JSON.parse(await readFile(outfitsFile, "utf8")); }
+    try { return JSON.parse(await readFile(outfitsFileFn(), "utf8")); }
     catch (error) { if (error.code === "ENOENT") return []; throw error; }
   }
 
   async function loadLibrary() {
-    try { return JSON.parse(await readFile(libraryFile, "utf8")); }
+    try { return JSON.parse(await readFile(libraryFileFn(), "utf8")); }
     catch (error) { if (error.code === "ENOENT") return []; throw error; }
   }
 
@@ -103,18 +110,18 @@ export function outfitStudioApi(options = {}) {
     const index = records.findIndex((record) => record.id === id);
     if (index === -1) return null;
     records[index] = { ...records[index], ...patch, updatedAt: new Date().toISOString() };
-    await atomicJson(outfitsFile, records);
+    await atomicJson(outfitsFileFn(), records);
     return records[index];
   }
 
   async function loadProfile() {
-    try { return JSON.parse(await readFile(profileFile, "utf8")); }
+    try { return JSON.parse(await readFile(profileFileFn(), "utf8")); }
     catch (error) { if (error.code === "ENOENT") return { styleNotes: "", hardRules: "" }; throw error; }
   }
 
   function garmentFile(item) {
     const name = path.basename(new URL(item.image, "http://localhost").pathname);
-    return path.join(importedDir, name);
+    return path.join(importedDirFn(), name);
   }
 
   const escapeXml = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -184,7 +191,7 @@ export function outfitStudioApi(options = {}) {
       let placed = false;
       if (look) {
         try {
-          const bytes = await sharp(path.join(outfitImagesDir, `${look.id}.png`)).resize(TILE, TILE, { fit: "cover" }).png().toBuffer();
+          const bytes = await sharp(path.join(outfitImagesDirFn(), `${look.id}.png`)).resize(TILE, TILE, { fit: "cover" }).png().toBuffer();
           composites.push({ input: bytes, left, top });
           placed = true;
         } catch {}
@@ -215,7 +222,7 @@ export function outfitStudioApi(options = {}) {
   async function buildLookCard(record) {
     const library = await loadLibrary();
     const byId = new Map(library.map((item) => [item.id, item]));
-    const photo = await sharp(path.join(outfitImagesDir, `${record.id}.png`)).resize(1000, 1000, { fit: "cover" }).png().toBuffer();
+    const photo = await sharp(path.join(outfitImagesDirFn(), `${record.id}.png`)).resize(1000, 1000, { fit: "cover" }).png().toBuffer();
     const thumbs = [];
     for (const garmentId of (record.garmentIds || []).slice(0, 6)) {
       const item = byId.get(garmentId);
@@ -241,7 +248,7 @@ export function outfitStudioApi(options = {}) {
   }
 
   async function modelReference() {
-    const referencePath = path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png"));
+    const referencePath = referencePathFn();
     try {
       return { data: await readFile(referencePath), mime: "image/png", name: "model.png" };
     } catch (error) {
@@ -257,7 +264,7 @@ export function outfitStudioApi(options = {}) {
     const hasStylistKey = provider === "anthropic" ? Boolean(setting("ANTHROPIC_API_KEY").trim()) : Boolean(setting("OPENAI_API_KEY").trim());
     let hasModelReference = false;
     try {
-      hasModelReference = (await stat(path.resolve(root, setting("WARDROBE_MODEL_REFERENCE", "data/model-reference.png")))).isFile();
+      hasModelReference = (await stat(referencePathFn())).isFile();
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -327,7 +334,7 @@ export function outfitStudioApi(options = {}) {
           let inspirationImage = null;
           if (record.inspiration) {
             try {
-              inspirationImage = { data: await readFile(path.join(inspirationDir, `${record.id}.png`)), mime: "image/png" };
+              inspirationImage = { data: await readFile(path.join(inspirationDirFn(), `${record.id}.png`)), mime: "image/png" };
             } catch {}
           }
           let extraInstruction = null;
@@ -364,9 +371,9 @@ export function outfitStudioApi(options = {}) {
           images,
           prompt: buildOutfitImagePrompt(outfit),
         });
-        await mkdir(outfitImagesDir, { recursive: true });
+        await mkdir(outfitImagesDirFn(), { recursive: true });
         const fileName = `${id}.png`;
-        await writeFile(path.join(outfitImagesDir, fileName), bytes);
+        await writeFile(path.join(outfitImagesDirFn(), fileName), bytes);
         await updateOutfit(id, { status: "ready", image: `${IMAGE_ROOT}/${fileName}`, error: null });
       } catch (error) {
         await updateOutfit(id, { status: "failed", error: error.message });
@@ -389,6 +396,9 @@ export function outfitStudioApi(options = {}) {
         }
         const shares = await loadShares();
         const share = shares.find((entry) => entry.token === publicMatch[1]);
+        const enterShareTenant = (fn) => share?.userId
+          ? runAsUser({ id: share.userId }, userDirFor(baseDataDir() || localBaseDir, share.userId), fn)
+          : fn();
         const sendHtml = (status, html) => {
           res.statusCode = status;
           res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -414,14 +424,14 @@ export function outfitStudioApi(options = {}) {
           return sendHtml(404, pageShell("Mira", { body: `<p class="eyebrow">Mira</p><h1>This look has moved on</h1><div class="rule"></div><p class="sub">The share link is no longer available.</p><a class="cta" href="${escapeXml(aboutUrl)}">Meet Mira</a>` }));
         }
         if (publicMatch[2]) {
-          let image = null;
-          if (share.type === "look") {
-            const records = await loadOutfits();
-            const record = records.find((entry) => entry.id === share.outfitId);
-            if (record?.status === "ready") image = await buildLookCard(record);
-          } else {
-            image = await buildWeekCollage(await buildWeek(share.weekStart));
-          }
+          const image = await enterShareTenant(async () => {
+            if (share.type === "look") {
+              const records = await loadOutfits();
+              const record = records.find((entry) => entry.id === share.outfitId);
+              return record?.status === "ready" ? buildLookCard(record) : null;
+            }
+            return buildWeekCollage(await buildWeek(share.weekStart));
+          });
           if (!image) return json(res, 404, { error: "Not found" });
           res.setHeader("Content-Type", "image/png");
           res.setHeader("Cache-Control", "public, max-age=3600");
@@ -438,8 +448,10 @@ export function outfitStudioApi(options = {}) {
           <meta name="twitter:card" content="summary_large_image">
           <meta name="twitter:image" content="${escapeXml(ogUrl)}">`;
         if (share.type === "look") {
-          const records = await loadOutfits();
-          const record = records.find((entry) => entry.id === share.outfitId);
+          const record = await enterShareTenant(async () => {
+            const records = await loadOutfits();
+            return records.find((entry) => entry.id === share.outfitId);
+          });
           if (!record || record.status !== "ready") {
             return sendHtml(404, pageShell("Mira", { body: `<p class="eyebrow">Mira</p><h1>This look has moved on</h1><div class="rule"></div><a class="cta" href="${escapeXml(aboutUrl)}">Meet Mira</a>` }));
           }
@@ -449,20 +461,24 @@ export function outfitStudioApi(options = {}) {
             body: `<p class="eyebrow">A look styled by Mira</p><h1>${escapeXml(record.name)}</h1>${subtitle ? `<p class="sub">${escapeXml(subtitle)}</p>` : '<div class="rule"></div>'}<img class="hero" src="/s/${share.token}/og.png" alt="${escapeXml(record.name)}">${record.reason ? `<p class="sub">"${escapeXml(record.reason)}"</p>` : ""}<a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · DRESS HOW YOU FEEL</p>`,
           }));
         }
-        const week = await buildWeek(share.weekStart);
+        const week = await enterShareTenant(() => buildWeek(share.weekStart));
         return sendHtml(200, pageShell("A week of looks — Mira", {
           meta: meta("A week of looks — Mira", weekSummaryLine(week.stats)),
           body: `<p class="eyebrow">A week dressed by Mira</p><h1>The Week in Looks</h1><div class="rule"></div><img class="hero" src="/s/${share.token}/og.png" alt="Weekly collage of looks"><p class="sub">${weekSummaryLine(week.stats)}</p><a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · DRESS HOW YOU FEEL</p>`,
         }));
       }
       if (url.pathname === "/api/shares" && req.method === "GET") {
-        return json(res, 200, await loadShares());
+        const shares = await loadShares();
+        const ownerId = currentUser()?.id || null;
+        return json(res, 200, isMultiTenant(options.env) ? shares.filter((entry) => (entry.userId || null) === ownerId) : shares);
       }
       const shareDeleteMatch = url.pathname.match(/^\/api\/shares\/([A-Za-z0-9_-]{10,64})$/);
       if (shareDeleteMatch && req.method === "DELETE") {
         const shares = await loadShares();
-        if (!shares.some((entry) => entry.token === shareDeleteMatch[1])) return json(res, 404, { error: "Share not found" });
-        await atomicJson(sharesFile, shares.filter((entry) => entry.token !== shareDeleteMatch[1]));
+        const target = shares.find((entry) => entry.token === shareDeleteMatch[1]);
+        if (!target) return json(res, 404, { error: "Share not found" });
+        if (isMultiTenant(options.env) && (target.userId || null) !== (currentUser()?.id || null)) return json(res, 404, { error: "Share not found" });
+        await atomicJson(sharesFileFn(), shares.filter((entry) => entry.token !== shareDeleteMatch[1]));
         return json(res, 200, { deleted: true });
       }
       if (url.pathname === "/api/profile" && req.method === "GET") {
@@ -474,7 +490,7 @@ export function outfitStudioApi(options = {}) {
           styleNotes: typeof input.styleNotes === "string" ? input.styleNotes.trim().slice(0, 2000) : "",
           hardRules: typeof input.hardRules === "string" ? input.hardRules.trim().slice(0, 2000) : "",
         };
-        await atomicJson(profileFile, profile);
+        await atomicJson(profileFileFn(), profile);
         return json(res, 200, profile);
       }
       const reviewMatch = url.pathname.match(/^\/api\/review\/week(\/collage\.png|\/share)?$/);
@@ -484,10 +500,11 @@ export function outfitStudioApi(options = {}) {
         const monday = mondayFor(requestedOffset);
         if (reviewMatch[1] === "/share") {
           const shares = await loadShares();
-          let share = shares.find((entry) => entry.type === "week" && entry.weekStart === monday);
+          const ownerId = currentUser()?.id || null;
+          let share = shares.find((entry) => entry.type === "week" && entry.weekStart === monday && (entry.userId || null) === ownerId);
           if (!share) {
-            share = { token: randomBytes(18).toString("base64url"), type: "week", weekStart: monday, createdAt: new Date().toISOString() };
-            await atomicJson(sharesFile, [...shares, share]);
+            share = { token: randomBytes(18).toString("base64url"), type: "week", weekStart: monday, userId: currentUser()?.id || null, createdAt: new Date().toISOString() };
+            await atomicJson(sharesFileFn(), [...shares, share]);
           }
           return json(res, 200, { token: share.token, path: `/s/${share.token}` });
         }
@@ -525,7 +542,7 @@ export function outfitStudioApi(options = {}) {
       }
       const imageMatch = url.pathname.match(/^\/api\/outfits\/images\/([\w.-]+)$/i);
       if (imageMatch && req.method === "GET") {
-        const file = path.join(outfitImagesDir, path.basename(imageMatch[1]));
+        const file = path.join(outfitImagesDirFn(), path.basename(imageMatch[1]));
         await stat(file);
         res.setHeader("Content-Type", "image/png");
         res.setHeader("Cache-Control", "no-store");
@@ -571,11 +588,11 @@ export function outfitStudioApi(options = {}) {
           updatedAt: now,
         };
         if (inspiration) {
-          await mkdir(inspirationDir, { recursive: true });
-          await writeFile(path.join(inspirationDir, `${record.id}.png`), await sharp(inspiration.data).rotate().resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).png().toBuffer(), { mode: 0o600 });
+          await mkdir(inspirationDirFn(), { recursive: true });
+          await writeFile(path.join(inspirationDirFn(), `${record.id}.png`), await sharp(inspiration.data).rotate().resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).png().toBuffer(), { mode: 0o600 });
         }
         const records = await loadOutfits();
-        await atomicJson(outfitsFile, [...records, record]);
+        await atomicJson(outfitsFileFn(), [...records, record]);
         void generate(record.id);
         return json(res, 202, record);
       }
@@ -603,10 +620,11 @@ export function outfitStudioApi(options = {}) {
       if (match[2] === "share" && req.method === "POST") {
         if (record.status !== "ready" || !record.image) return json(res, 409, { error: "Finish the look before sharing it." });
         const shares = await loadShares();
-        let share = shares.find((entry) => entry.type === "look" && entry.outfitId === record.id);
+        const ownerId = currentUser()?.id || null;
+        let share = shares.find((entry) => entry.type === "look" && entry.outfitId === record.id && (entry.userId || null) === ownerId);
         if (!share) {
-          share = { token: randomBytes(18).toString("base64url"), type: "look", outfitId: record.id, createdAt: new Date().toISOString() };
-          await atomicJson(sharesFile, [...shares, share]);
+          share = { token: randomBytes(18).toString("base64url"), type: "look", outfitId: record.id, userId: currentUser()?.id || null, createdAt: new Date().toISOString() };
+          await atomicJson(sharesFileFn(), [...shares, share]);
         }
         return json(res, 200, { token: share.token, path: `/s/${share.token}` });
       }
@@ -645,7 +663,7 @@ export function outfitStudioApi(options = {}) {
           updatedAt: now,
         };
         const allRecords = await loadOutfits();
-        await atomicJson(outfitsFile, [...allRecords, remixRecord]);
+        await atomicJson(outfitsFileFn(), [...allRecords, remixRecord]);
         void generate(remixRecord.id);
         return json(res, 202, remixRecord);
       }
@@ -666,9 +684,9 @@ export function outfitStudioApi(options = {}) {
         return json(res, 200, await updateOutfit(record.id, patch));
       }
       if (!match[2] && req.method === "DELETE") {
-        await atomicJson(outfitsFile, records.filter((entry) => entry.id !== record.id));
-        await rm(path.join(outfitImagesDir, `${record.id}.png`), { force: true });
-        await rm(path.join(inspirationDir, `${record.id}.png`), { force: true });
+        await atomicJson(outfitsFileFn(), records.filter((entry) => entry.id !== record.id));
+        await rm(path.join(outfitImagesDirFn(), `${record.id}.png`), { force: true });
+        await rm(path.join(inspirationDirFn(), `${record.id}.png`), { force: true });
         return json(res, 200, { deleted: true, id: record.id });
       }
       if (!match[2] && req.method === "GET") return json(res, 200, record);
@@ -684,20 +702,24 @@ export function outfitStudioApi(options = {}) {
     apply: "serve",
     async configResolved(config) {
       root = config.root;
-      const dataDir = path.resolve(root, setting("WARDROBE_DATA_DIR", "data"));
-      outfitsFile = path.join(dataDir, "outfits.json");
-      outfitImagesDir = path.join(dataDir, "outfit-images");
-      inspirationDir = path.join(dataDir, "inspiration");
-      profileFile = path.join(dataDir, "profile.json");
-      sharesFile = path.join(dataDir, "shares.json");
-      libraryFile = path.join(dataDir, "library.json");
-      importedDir = path.join(dataDir, "imported");
-      await mkdir(dataDir, { recursive: true });
-      initTelemetry(dataDir);
-      const records = await loadOutfits();
-      const interrupted = records.filter((record) => ["curating", "rendering"].includes(record.status));
-      for (const record of interrupted) {
-        await updateOutfit(record.id, { status: "failed", error: "Generation was interrupted by a restart. Retry to continue." });
+      localBaseDir = path.resolve(root, setting("WARDROBE_DATA_DIR", "data"));
+      await mkdir(localBaseDir, { recursive: true });
+      initTelemetry(localBaseDir);
+      const recoverOutfits = async () => {
+        const records = await loadOutfits();
+        const interrupted = records.filter((record) => ["curating", "rendering"].includes(record.status));
+        for (const record of interrupted) {
+          await updateOutfit(record.id, { status: "failed", error: "Generation was interrupted by a restart. Retry to continue." });
+        }
+      };
+      const { readdir } = await import("node:fs/promises");
+      const tenantDirs = [localBaseDir];
+      if (isMultiTenant(options.env)) {
+        const userIds = await readdir(path.join(localBaseDir, "users")).catch(() => []);
+        tenantDirs.push(...userIds.map((id) => userDirFor(localBaseDir, id)));
+      }
+      for (const dir of tenantDirs) {
+        await tenantStorage.run({ userDir: dir }, recoverOutfits);
       }
     },
     configureServer(server) { server.middlewares.use(handler); },
