@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual, createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicJson } from "./import-job-api.mjs";
 import { isMultiTenant, runAsUser, userDirFor } from "./tenant.mjs";
@@ -129,13 +129,33 @@ export function ssoApi(options = {}) {
     }
 
     if (!url.pathname.startsWith("/api/")) return next();
-    if (url.pathname === "/api/health") return next();
+    if (url.pathname === "/api/health" || url.pathname === "/api/billing/webhook") return next();
 
     const userId = cookieUser(req);
     if (!userId) return json(res, 401, { error: "auth_required", mode: "google" });
     const users = await loadUsers();
     const user = users[userId];
     if (!user) return json(res, 401, { error: "auth_required", mode: "google" });
+
+    if (url.pathname === "/api/me" && req.method === "DELETE") {
+      // Right to erasure: remove the closet directory, share links, billing
+      // records, and the account itself, then end the session.
+      await rm(userDirFor(baseDir, userId), { recursive: true, force: true });
+      const sharesFile = path.join(baseDir, "shares.json");
+      try {
+        const shares = JSON.parse(await readFile(sharesFile, "utf8"));
+        await atomicJson(sharesFile, shares.filter((entry) => entry.userId !== userId));
+      } catch {}
+      const billingFile = path.join(baseDir, "billing.json");
+      try {
+        const orders = JSON.parse(await readFile(billingFile, "utf8"));
+        await atomicJson(billingFile, orders.filter((entry) => entry.userId !== userId));
+      } catch {}
+      delete users[userId];
+      await atomicJson(usersFile, users);
+      res.setHeader("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+      return json(res, 200, { deleted: true });
+    }
 
     if (url.pathname === "/api/me" && req.method === "GET") {
       let rendersUsed = 0;

@@ -15,6 +15,7 @@ function AuthGate({ mode }) {
           <p>Your closet, styled by feeling. Sign in to begin.</p>
           <a className="google-signin" href="/auth/google">Continue with Google</a>
           <p className="auth-fineprint">Your photos and closet are private to your account.</p>
+          <p className="auth-fineprint"><a href="/legal/terms">Terms</a> · <a href="/legal/privacy">Privacy</a> · <a href="/legal/refunds">Refunds</a> · <a href="/legal/contact">Contact</a></p>
         </div>
       </div>
     );
@@ -24,30 +25,113 @@ function AuthGate({ mode }) {
 
 function AccountChip() {
   const [me, setMe] = useState(null);
+  const [packs, setPacks] = useState(null);
+  const [shopOpen, setShopOpen] = useState(false);
+  const [buying, setBuying] = useState(false);
+  const [notice, setNotice] = useState("");
 
-  useEffect(() => {
+  const refreshMe = useCallback(() => {
     fetch("/api/me", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
       .then(setMe)
       .catch(() => {});
   }, []);
 
+  useEffect(() => { refreshMe(); }, [refreshMe]);
+
+  const openShop = async () => {
+    setNotice("");
+    try {
+      const response = await fetch("/api/billing/packs", { cache: "no-store" });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.error || "Billing unavailable.");
+      setPacks(value);
+      setShopOpen(true);
+    } catch (shopError) {
+      setNotice(shopError.message);
+    }
+  };
+
+  const buy = async (packId) => {
+    setBuying(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/billing/order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ packId }) });
+      const order = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(order.error || "Could not start the payment.");
+      if (!window.Razorpay) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "https://checkout.razorpay.com/v1/checkout.js";
+          script.onload = resolve;
+          script.onerror = () => reject(new Error("Could not load the payment window."));
+          document.head.appendChild(script);
+        });
+      }
+      const checkout = new window.Razorpay({
+        key: order.keyId,
+        amount: order.amount,
+        currency: order.currency,
+        name: "Mira",
+        description: `${order.packName} — ${order.credits} render credits`,
+        order_id: order.orderId,
+        handler: async (payment) => {
+          const verify = await fetch("/api/billing/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payment) });
+          const result = await verify.json().catch(() => ({}));
+          setNotice(verify.ok ? `Added ${result.credits} render credits.` : (result.error || "Verification failed — contact support."));
+          setShopOpen(false);
+          refreshMe();
+        },
+        theme: { color: "#16130e" },
+      });
+      checkout.open();
+    } catch (buyError) {
+      setNotice(buyError.message);
+    } finally {
+      setBuying(false);
+    }
+  };
+
+  const deleteAccount = async () => {
+    const sure = window.confirm("Delete your Mira account? Your photos, closet, looks, and shares are permanently erased. This cannot be undone.");
+    if (!sure) return;
+    await fetch("/api/me", { method: "DELETE" }).catch(() => {});
+    window.location.reload();
+  };
+
   if (!me) return null;
   const creditsLeft = Math.max(0, (me.credits ?? 0) - (me.rendersUsed ?? 0));
 
   return (
-    <div className="account-chip">
-      <span>{me.name || me.email}</span>
-      <span className="account-credits">{creditsLeft} renders left</span>
-      <button
-        type="button"
-        onClick={async () => {
-          await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-          window.location.reload();
-        }}
-      >
-        Sign out
-      </button>
+    <div className="account-block">
+      <div className="account-chip">
+        <span>{me.name || me.email}</span>
+        <span className="account-credits">{creditsLeft} renders left</span>
+        <button type="button" onClick={openShop}>Add renders</button>
+        <button
+          type="button"
+          onClick={async () => {
+            await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+            window.location.reload();
+          }}
+        >
+          Sign out
+        </button>
+        <button type="button" className="account-danger" onClick={deleteAccount}>Delete account</button>
+      </div>
+      {notice && <p className="account-notice" role="status">{notice}</p>}
+      {shopOpen && packs && (
+        <div className="pack-row" role="group" aria-label="Credit packs">
+          {packs.packs.map((pack) => (
+            <button key={pack.id} type="button" className="pack-card" disabled={buying || !packs.configured} onClick={() => buy(pack.id)}>
+              <strong>{pack.name}</strong>
+              <span>{pack.credits} renders</span>
+              <em>{pack.label}</em>
+            </button>
+          ))}
+          {!packs.configured && <p className="account-notice">Payments are not configured on this deployment yet.</p>}
+        </div>
+      )}
     </div>
   );
 }

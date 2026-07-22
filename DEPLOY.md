@@ -67,3 +67,11 @@ Add `https://YOUR-DOMAIN/auth/google/callback` as a second authorized redirect U
 - **Your** env API keys serve all users; the in-app key screen is disabled. Each user gets `MIRA_FREE_RENDERS` lifetime render credits (raise a user's `credits` in `data/users.json` to grant more); `WARDROBE_DAILY_BUDGET` still caps each user's daily spend.
 - Share links keep working publicly across users; share management is scoped to the owning account.
 - The passphrase gate is replaced by SSO. Before charging money, add: terms/privacy pages, a data-deletion path, and billing — see ROADMAP.
+
+## 6. Payments (Razorpay) & compliance
+
+1. Create a [Razorpay](https://dashboard.razorpay.com/) account, complete KYC, and copy the Key ID/Secret into `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`.
+2. Add a webhook for `payment.captured` pointing to `https://YOUR-DOMAIN/api/billing/webhook` and set `RAZORPAY_WEBHOOK_SECRET`.
+3. Set `MIRA_OPERATOR_NAME` and `MIRA_SUPPORT_EMAIL` — these render into the live legal pages Razorpay's activation team checks: `/legal/terms`, `/legal/privacy`, `/legal/refunds`, `/legal/pricing`, `/legal/contact`.
+4. Users buy credit packs from the "Add renders" button (₹399/50, ₹999/150, ₹1,999/400 — edit `CREDIT_PACKS` in `scripts/billing-api.mjs` to change). Payments are verified server-side by signature, credited idempotently (checkout callback or webhook, whichever lands first), and never touch card data.
+5. Compliance built in: DPDP-aligned privacy policy, self-serve **Delete account** (erases the user's closet, shares, billing records, and account), refunds policy honored by design (failed renders never consume credits).

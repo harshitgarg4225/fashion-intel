@@ -2,6 +2,8 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { authApi } from "./scripts/auth-api.mjs";
 import { ssoApi } from "./scripts/sso-api.mjs";
+import { billingApi } from "./scripts/billing-api.mjs";
+import { legalApi } from "./scripts/legal-api.mjs";
 import { wardrobeImportApi } from "./scripts/import-job-api.mjs";
 import { outfitStudioApi } from "./scripts/outfit-studio-api.mjs";
 import { googlePhotosApi } from "./scripts/google-photos-api.mjs";
@@ -36,6 +38,8 @@ export default defineConfig(({ mode }) => {
       react(),
       authApi({ env }),
       ssoApi({ env }),
+      billingApi({ env }),
+      legalApi({ env }),
       responsiveImageApi(),
       wardrobeImportApi({ env, bridge }),
       outfitStudioApi({ env }),
