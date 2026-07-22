@@ -76,7 +76,8 @@ Curate exactly one outfit:
 - Let one graphic, pattern, texture, or saturated piece carry the statement; balance visual weight and silhouette.
 - Keep layered looks physically plausible.
 - Do not repeat an already-created top+bottom combination.
-- Give the outfit a short evocative name, 1-3 lowercase occasion labels (e.g. smart-casual, weekend, office), one sentence explaining why the combination works, and a restrained real-world photo setting description (e.g. "a quiet warm-stone courtyard with restrained greenery").`;
+- Give the outfit a short evocative name, 1-3 lowercase occasion labels (e.g. smart-casual, weekend, office), and one sentence explaining why the combination works.
+- For the photo setting, describe the REAL PLACE this person is actually going, matched to the occasion, feeling, and time of day — the photo should read like they are already there. A date-night look belongs on a candlelit restaurant terrace at dusk; a wedding-guest look at a garden venue among guests-height florals; an interview look in a bright modern lobby; a weekend look on a sunlit caffè street. Name the light, the materials, and the hour (e.g. "a candlelit trattoria terrace at blue hour, warm string lights, linen tablecloths"). Keep it restrained and photographic — a place, not a backdrop.`;
 }
 
 export async function curateOutfit({ setting, items, direction, mood, usedCombinations = [], feedback = [], profile = null, itemImages = [], inspirationImage = null, extraInstruction = null }) {
