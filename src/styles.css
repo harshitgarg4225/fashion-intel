@@ -1641,3 +1641,113 @@ button { font: inherit; }
 .pack-card em { font-style: normal; font-size: 14px; color: var(--accent); }
 
 .auth-fineprint a { color: var(--accent); text-decoration: none; }
+
+/* ============================================================
+   Maison layer — monochrome, square, tracked capitals.
+   Black and white carry the chrome; imagery carries the color.
+   ============================================================ */
+
+:root {
+  --paper: #ffffff;
+  --ink: #111111;
+  --muted: #6e6e6e;
+  --line: #e5e5e5;
+  --accent: #111111;
+  --danger: #8a3a34;
+}
+
+*, *::before, *::after { border-radius: 0 !important; }
+
+.masthead-eyebrow, .journal-eyebrow { color: var(--muted); letter-spacing: .34em; }
+
+.wordmark {
+  font-family: inherit;
+  font-weight: 600;
+  font-size: clamp(26px, 3.2vw, 38px);
+  letter-spacing: .42em;
+  padding-left: .42em; /* optical centering with tracking */
+}
+
+.wordmark::after { background: var(--ink); width: 44px; }
+
+.mood-question {
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 560;
+  font-size: clamp(17px, 2vw, 22px);
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  margin-bottom: 34px;
+}
+
+.tile-caption strong,
+.outfit-heading h3,
+.journal-day-name,
+.insight-block h3,
+.journal-title h2,
+.auth-card h1,
+.auth-gate h1,
+.welcome-card h2,
+.import-popover__title,
+.reference-capture h3,
+.keys-panel h3,
+.viewer-heading h2,
+.modeled-heading h2 {
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 560;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.tile-caption strong { font-size: 12px; }
+.outfit-heading h3 { font-size: 13px; }
+.journal-day-name { font-size: 11px; letter-spacing: .14em; }
+.journal-title h2 { font-size: clamp(16px, 2vw, 20px); letter-spacing: .26em; }
+.insight-block h3 { font-size: 13px; }
+.insight-tile strong { font-family: inherit; font-weight: 560; font-size: 32px; }
+.welcome-card h2 { font-size: 15px; letter-spacing: .22em; }
+.welcome-card ol li::before { font-family: inherit; font-size: 12px; }
+
+.status { font-family: inherit; font-style: normal; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; }
+.journal-summary em, .journal-day-empty { font-family: inherit; font-style: normal; }
+
+/* Borderless product grid: imagery on quiet gray blocks */
+.gallery-item .tile-frame, .tile-frame { border: 0; background: #f6f6f6; }
+.gallery-item:hover .tile-frame, .gallery-item:focus-visible .tile-frame { border: 0; outline: 1px solid var(--ink); outline-offset: 0; }
+.outfit-photo { border: 0; background: #f6f6f6; }
+.outfit-card:hover .outfit-photo { border: 0; outline: 1px solid var(--ink); }
+.journal-day-frame { border: 0; background: #f6f6f6; }
+.journal-day.is-today .journal-day-frame { border: 0; outline: 1px solid var(--ink); }
+.insight-tile, .welcome-card, .auth-card, .auth-gate form { background: #fff; border-color: var(--line); }
+
+/* Buttons invert, never tint */
+.primary-button:hover, .auth-gate button:hover:not(:disabled), .outfit-create:not(:disabled):hover,
+.google-signin:hover, .journal-collage:hover, .capsule-form button:not(:disabled):hover,
+.import-button--primary:hover:not(:disabled) {
+  background: var(--paper) !important;
+  color: var(--ink) !important;
+  border-color: var(--ink) !important;
+  outline: none;
+}
+
+.mood-chip-button.active, .preset-chip.active, .season-chip.active, .category-nav button.active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.mood-chip-button:hover:not(.active), .preset-chip:hover, .weather-toggle:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
+.weather-toggle.active { border-color: var(--ink); color: var(--ink); }
+.category-nav button.active { background: transparent; color: var(--ink); border-bottom: 1px solid var(--ink); }
+
+.occasion-chip.mood-chip, .streak-chip, .account-chip .account-credits { border-color: var(--ink); color: var(--ink); }
+.outfit-favorite.is-favorite, .outfit-favorite:hover { color: var(--ink); }
+.outfit-retry, .verdict-button.active { color: var(--ink); border-color: var(--ink); }
+.insight-bar { background: var(--ink); }
+.insight-advice { border-left-color: var(--ink); background: #f6f6f6; }
+.duplicate-notice { border-left-color: var(--ink); background: #f6f6f6; }
+.wordmark + .account-chip .account-credits { border-color: var(--ink); }
+.journal-nav:hover:not(:disabled) { border-color: var(--ink); }
+.pack-card:hover:not(:disabled) { border-color: var(--ink); }
+.pack-card em, .account-notice, .auth-fineprint a, .journal-download:hover, .outfit-wear:hover { color: var(--ink); }
+.masthead .view-switch button.active::after { background: var(--ink); }
+.import-popover__eyebrow { color: var(--muted); }
+.skeleton-tile { border: 0; background: linear-gradient(100deg, #f2f2f2 40%, #fafafa 50%, #f2f2f2 60%); background-size: 200% 100%; }
+.status.manual-share a { color: var(--ink); }
+.journal-collage { letter-spacing: .22em; }

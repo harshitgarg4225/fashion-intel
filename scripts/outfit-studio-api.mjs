@@ -197,23 +197,23 @@ export function outfitStudioApi(options = {}) {
         } catch {}
       }
       if (!placed) {
-        svgParts.push(`<rect x="${left}" y="${top}" width="${TILE}" height="${TILE}" fill="#fdfcf9" stroke="#e0d9ca"/>`);
-        svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE / 2 + 8}" text-anchor="middle" font-family="Georgia,serif" font-size="26" fill="#c9c1b0">&#8212;</text>`);
+        svgParts.push(`<rect x="${left}" y="${top}" width="${TILE}" height="${TILE}" fill="#f6f6f6" stroke="#e5e5e5"/>`);
+        svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE / 2 + 8}" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" letter-spacing="2" font-size="26" fill="#bdbdbd">&#8212;</text>`);
       }
-      svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE + LABEL}" text-anchor="middle" font-size="13" letter-spacing="3" fill="#71695c">${day.weekday.slice(0, 3).toUpperCase()}</text>`);
+      svgParts.push(`<text x="${left + TILE / 2}" y="${top + TILE + LABEL}" text-anchor="middle" font-size="13" letter-spacing="3" fill="#6e6e6e">${day.weekday.slice(0, 3).toUpperCase()}</text>`);
     }
     const pretty = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
     const range = `${pretty(week.start)} — ${pretty(week.end)}, ${week.end.slice(0, 4)}`;
     const chrome = `<svg width="1080" height="1350">
-      <text x="540" y="84" text-anchor="middle" font-size="12" letter-spacing="6" fill="#9d7b4f">THE WEEK IN LOOKS</text>
-      <text x="540" y="150" text-anchor="middle" font-family="Georgia,serif" font-size="52" letter-spacing="3" fill="#16130e">${range}</text>
-      <rect x="512" y="176" width="56" height="1" fill="#9d7b4f"/>
+      <text x="540" y="84" text-anchor="middle" font-size="12" letter-spacing="6" fill="#000000">THE WEEK IN LOOKS</text>
+      <text x="540" y="150" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" letter-spacing="6" font-size="40" letter-spacing="3" fill="#000000">${range}</text>
+      <rect x="512" y="176" width="56" height="1" fill="#000000"/>
       ${svgParts.join("\n")}
-      <text x="540" y="920" text-anchor="middle" font-family="Georgia,serif" font-size="24" font-style="italic" fill="#71695c">${weekSummaryLine(week.stats)}</text>
-      <rect x="512" y="1256" width="56" height="1" fill="#9d7b4f"/>
-      <text x="540" y="1298" text-anchor="middle" font-size="14" letter-spacing="6" fill="#16130e">M I R A</text>
+      <text x="540" y="920" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" letter-spacing="2" font-size="24" fill="#6e6e6e">${weekSummaryLine(week.stats)}</text>
+      <rect x="512" y="1256" width="56" height="1" fill="#000000"/>
+      <text x="540" y="1298" text-anchor="middle" font-size="14" letter-spacing="6" fill="#000000">M I R A</text>
     </svg>`;
-    return sharp({ create: { width: 1080, height: 1350, channels: 3, background: { r: 248, g: 245, b: 239 } } })
+    return sharp({ create: { width: 1080, height: 1350, channels: 3, background: { r: 255, g: 255, b: 255 } } })
       .composite([...composites, { input: Buffer.from(chrome), left: 0, top: 0 }])
       .png()
       .toBuffer();
@@ -231,13 +231,13 @@ export function outfitStudioApi(options = {}) {
         thumbs.push(await sharp(await readFile(garmentFile(item))).resize(120, 120, { fit: "inside" }).png().toBuffer());
       } catch {}
     }
-    const label = `<svg width="1080" height="1400"><style>text{font-family:Georgia,serif;fill:#16130e}</style><text x="40" y="1245" font-size="44" font-weight="600">${escapeXml(record.name)}</text><text x="40" y="1292" font-size="24" fill="#71695c" font-style="italic">${escapeXml([record.mood ? `feels ${record.mood}` : "", ...(record.occasion || [])].filter(Boolean).join(" · "))}</text><text x="40" y="1360" font-family="Helvetica,Arial,sans-serif" font-size="18" letter-spacing="6" fill="#9d7b4f">M I R A</text></svg>`;
+    const label = `<svg width="1080" height="1400"><style>text{font-family:Helvetica,Arial,sans-serif;fill:#000000}</style><text x="40" y="1245" font-size="44" font-weight="600">${escapeXml(record.name)}</text><text x="40" y="1292" font-size="24" fill="#6e6e6e" font-style="italic">${escapeXml([record.mood ? `feels ${record.mood}` : "", ...(record.occasion || [])].filter(Boolean).join(" · "))}</text><text x="40" y="1360" font-family="Helvetica,Arial,sans-serif" font-size="18" letter-spacing="6" fill="#000000">M I R A</text></svg>`;
     const composites = [
       { input: photo, left: 40, top: 40 },
       ...thumbs.map((thumb, index) => ({ input: thumb, left: 40 + (index * 140), top: 1080 })),
       { input: Buffer.from(label), left: 0, top: 0 },
     ];
-    return sharp({ create: { width: 1080, height: 1400, channels: 3, background: { r: 248, g: 245, b: 239 } } })
+    return sharp({ create: { width: 1080, height: 1400, channels: 3, background: { r: 255, g: 255, b: 255 } } })
       .composite(composites)
       .png()
       .toBuffer();
@@ -409,16 +409,16 @@ export function outfitStudioApi(options = {}) {
         };
         const aboutUrl = setting("WARDROBE_ABOUT_URL", "https://github.com/harshitgarg4225/fashion-intel");
         const pageShell = (title, inner) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${inner.meta || ""}<title>${escapeXml(title)}</title><style>
-          body{margin:0;background:#f8f5ef;color:#16130e;font-family:Helvetica,Arial,sans-serif;text-align:center}
+          body{margin:0;background:#ffffff;color:#000000;font-family:Helvetica,Arial,sans-serif;text-align:center}
           .wrap{max-width:560px;margin:0 auto;padding:48px 20px 72px}
-          .eyebrow{font-size:11px;letter-spacing:.3em;color:#9d7b4f;text-transform:uppercase;margin:0 0 10px}
-          h1{font-family:Georgia,serif;font-weight:600;font-size:34px;letter-spacing:.02em;margin:0}
-          .rule{width:56px;height:1px;background:#9d7b4f;margin:18px auto}
-          img.hero{width:100%;border:1px solid #e0d9ca;background:#fdfcf9}
-          .sub{font-family:Georgia,serif;font-style:italic;font-size:17px;color:#71695c;margin:14px 0 26px}
-          .cta{display:inline-block;background:#16130e;color:#f8f5ef;text-decoration:none;padding:14px 28px;font-size:12px;letter-spacing:.2em;text-transform:uppercase}
-          .cta:hover{background:#9d7b4f}
-          .foot{margin-top:34px;font-size:12px;letter-spacing:.24em;color:#71695c}
+          .eyebrow{font-size:11px;letter-spacing:.3em;color:#000000;text-transform:uppercase;margin:0 0 10px}
+          h1{font-family:Helvetica,Arial,sans-serif;font-weight:600;font-size:34px;letter-spacing:.02em;margin:0}
+          .rule{width:56px;height:1px;background:#000000;margin:18px auto}
+          img.hero{width:100%;border:1px solid #e5e5e5;background:#f6f6f6}
+          .sub{font-family:Helvetica,Arial,sans-serif;font-style:italic;font-size:17px;color:#6e6e6e;margin:14px 0 26px}
+          .cta{display:inline-block;background:#000000;color:#ffffff;text-decoration:none;padding:14px 28px;font-size:12px;letter-spacing:.2em;text-transform:uppercase}
+          .cta:hover{background:#fff;color:#000;outline:1px solid #000}
+          .foot{margin-top:34px;font-size:12px;letter-spacing:.24em;color:#6e6e6e}
         </style></head><body><div class="wrap">${inner.body}</div></body></html>`;
         if (!share) {
           return sendHtml(404, pageShell("Mira", { body: `<p class="eyebrow">Mira</p><h1>This look has moved on</h1><div class="rule"></div><p class="sub">The share link is no longer available.</p><a class="cta" href="${escapeXml(aboutUrl)}">Meet Mira</a>` }));

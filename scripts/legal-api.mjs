@@ -7,18 +7,18 @@ const esc = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").
 
 function shell(title, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)} — Mira</title><style>
-  body{margin:0;background:#f8f5ef;color:#16130e;font-family:Helvetica,Arial,sans-serif;line-height:1.65}
+  body{margin:0;background:#ffffff;color:#000000;font-family:Helvetica,Arial,sans-serif;line-height:1.65}
   .wrap{max-width:680px;margin:0 auto;padding:56px 24px 96px}
-  .eyebrow{font-size:11px;letter-spacing:.3em;color:#9d7b4f;text-transform:uppercase;margin:0 0 10px;text-align:center}
-  h1{font-family:Georgia,serif;font-weight:600;font-size:34px;margin:0;text-align:center}
-  .rule{width:56px;height:1px;background:#9d7b4f;margin:20px auto 40px}
-  h2{font-family:Georgia,serif;font-weight:600;font-size:21px;margin:36px 0 10px}
-  p,li{font-size:14.5px;color:#3d3a33}
-  a{color:#9d7b4f}
+  .eyebrow{font-size:11px;letter-spacing:.3em;color:#000000;text-transform:uppercase;margin:0 0 10px;text-align:center}
+  h1{font-weight:600;font-size:24px;letter-spacing:.28em;text-transform:uppercase;margin:0;text-align:center}
+  .rule{width:56px;height:1px;background:#000000;margin:20px auto 40px}
+  h2{letter-spacing:.14em;text-transform:uppercase;font-weight:600;font-size:21px;margin:36px 0 10px}
+  p,li{font-size:14.5px;color:#333333}
+  a{color:#000000}
   table{border-collapse:collapse;width:100%;margin:14px 0}
-  td,th{border:1px solid #e0d9ca;padding:10px 14px;font-size:14px;text-align:left}
-  .foot{margin-top:56px;text-align:center;font-size:11px;letter-spacing:.2em;color:#71695c;text-transform:uppercase}
-  .foot a{margin:0 8px;color:#71695c;text-decoration:none}
+  td,th{border:1px solid #e5e5e5;padding:10px 14px;font-size:14px;text-align:left}
+  .foot{margin-top:56px;text-align:center;font-size:11px;letter-spacing:.2em;color:#6e6e6e;text-transform:uppercase}
+  .foot a{margin:0 8px;color:#6e6e6e;text-decoration:none}
   </style></head><body><div class="wrap"><p class="eyebrow">Mira</p><h1>${esc(title)}</h1><div class="rule"></div>${body}
   <p class="foot"><a href="/legal/terms">Terms</a>·<a href="/legal/privacy">Privacy</a>·<a href="/legal/refunds">Refunds</a>·<a href="/legal/pricing">Pricing</a>·<a href="/legal/contact">Contact</a></p>
   </div></body></html>`;
