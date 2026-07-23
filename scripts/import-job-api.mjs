@@ -7,6 +7,7 @@ import { audit, checkImageBudget, initTelemetry, recordUsage } from "./telemetry
 import { initSettingsStore, makeSetting, saveStoredSettings, storedKeyStatus, STORABLE_KEYS } from "./settings-store.mjs";
 import { checkRenderCredits, initTenancy, isMultiTenant, tenantDataDir, tenantStorage, userDirFor } from "./tenant.mjs";
 import { maybeGrantReferralBonus } from "./referrals.mjs";
+import { trackEvent } from "./metrics.mjs";
 
 const API_ROOT = "/api/import/jobs";
 const ASSET_ROOT = "/api/import/assets";
@@ -435,6 +436,7 @@ export async function imageEdit({ setting, modelSetting, prompt, images, size, b
       background,
     });
   }
+  trackEvent("render", { provider: setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase() });
   // A successful render is the referral activation event.
   void maybeGrantReferralBonus({
     MIRA_MULTI_TENANT: setting("MIRA_MULTI_TENANT"),

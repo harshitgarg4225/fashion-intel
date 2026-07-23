@@ -4,6 +4,7 @@ import { authApi } from "./scripts/auth-api.mjs";
 import { ssoApi } from "./scripts/sso-api.mjs";
 import { billingApi } from "./scripts/billing-api.mjs";
 import { legalApi } from "./scripts/legal-api.mjs";
+import { adminApi } from "./scripts/admin-api.mjs";
 import { wardrobeImportApi } from "./scripts/import-job-api.mjs";
 import { outfitStudioApi } from "./scripts/outfit-studio-api.mjs";
 import { googlePhotosApi } from "./scripts/google-photos-api.mjs";
@@ -40,6 +41,7 @@ export default defineConfig(({ mode }) => {
       ssoApi({ env }),
       billingApi({ env }),
       legalApi({ env }),
+      adminApi({ env }),
       responsiveImageApi(),
       wardrobeImportApi({ env, bridge }),
       outfitStudioApi({ env }),

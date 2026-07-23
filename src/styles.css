@@ -1772,3 +1772,33 @@ button { font: inherit; }
   letter-spacing: .06em;
   color: var(--ink);
 }
+
+/* Signed-out landing: the referral CTA lands here, so the card must sell */
+.auth-eyebrow {
+  margin: 0 0 6px;
+  font-size: 10px;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.auth-tagline { color: var(--muted); }
+
+.auth-steps {
+  margin: 22px 0 6px;
+  padding: 0 0 0 18px;
+  text-align: left;
+}
+
+.auth-steps li {
+  margin: 10px 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.auth-steps li strong {
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: .04em;
+}

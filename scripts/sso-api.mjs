@@ -4,6 +4,7 @@ import path from "node:path";
 import { atomicJson } from "./import-job-api.mjs";
 import { isMultiTenant, runAsUser, userDirFor } from "./tenant.mjs";
 import { findUserByRefCode, generateRefCode, referralBonuses, referralSummary } from "./referrals.mjs";
+import { trackEvent } from "./metrics.mjs";
 
 // Google SSO + per-user gating for multi-tenant mode. Inactive unless
 // MIRA_MULTI_TENANT=true. Requires GOOGLE_CLIENT_ID/SECRET (web OAuth
@@ -132,6 +133,7 @@ export function ssoApi(options = {}) {
       }
       await atomicJson(usersFile, users);
       await mkdir(userDirFor(baseDir, userId), { recursive: true });
+      trackEvent(isNewUser ? "signup" : "login", { userId, referred: Boolean(users[userId].referredBy) });
       const secure = (req.headers["x-forwarded-proto"] || "").includes("https") ? "; Secure" : "";
       res.setHeader("Set-Cookie", [
         `${COOKIE}=${userId}.${sign(userId)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${30 * 24 * 3600}${secure}`,

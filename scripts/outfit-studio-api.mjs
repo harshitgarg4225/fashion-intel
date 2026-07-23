@@ -11,6 +11,7 @@ import { computeStreak } from "./wear-stats.mjs";
 import { clientIp, isTrustedProxy } from "./request-utils.mjs";
 import { baseDataDir, currentUser, isMultiTenant, runAsUser, tenantDataDir, tenantStorage, userDirFor } from "./tenant.mjs";
 import { refCodeFor, referralBonuses } from "./referrals.mjs";
+import { trackEvent } from "./metrics.mjs";
 
 const API_ROOT = "/api/outfits";
 const IMAGE_ROOT = "/api/outfits/images";
@@ -474,6 +475,7 @@ export function outfitStudioApi(options = {}) {
         share.views = (Number(share.views) || 0) + 1;
         share.lastViewedAt = new Date().toISOString();
         void atomicJson(sharesFileFn(), shares).catch(() => {});
+        trackEvent("share_view", { shareType: share.type });
         const proto = (req.headers["x-forwarded-proto"] || "").includes("https") ? "https" : "http";
         const base = `${proto}://${req.headers.host || "localhost"}`;
         const ogUrl = `${base}/s/${share.token}/og.png`;
@@ -555,6 +557,7 @@ export function outfitStudioApi(options = {}) {
         entry.image = `/api/journal/photos/${entry.id}.jpg`;
         const entries = await loadJournal();
         await atomicJson(journalFileFn(), [...entries, entry]);
+        trackEvent("journal_log", { backfilled: date !== today });
         return json(res, 201, entry);
       }
       const journalPhotoMatch = url.pathname.match(/^\/api\/journal\/photos\/([\w.-]+)$/i);
@@ -586,6 +589,7 @@ export function outfitStudioApi(options = {}) {
           if (!share) {
             share = { token: randomBytes(18).toString("base64url"), type: "week", weekStart: monday, userId: currentUser()?.id || null, createdAt: new Date().toISOString() };
             await atomicJson(sharesFileFn(), [...shares, share]);
+            trackEvent("share_created", { shareType: "week" });
           }
           return json(res, 200, { token: share.token, path: `/s/${share.token}` });
         }
@@ -706,6 +710,7 @@ export function outfitStudioApi(options = {}) {
         if (!share) {
           share = { token: randomBytes(18).toString("base64url"), type: "look", outfitId: record.id, userId: currentUser()?.id || null, createdAt: new Date().toISOString() };
           await atomicJson(sharesFileFn(), [...shares, share]);
+          trackEvent("share_created", { shareType: "look" });
         }
         return json(res, 200, { token: share.token, path: `/s/${share.token}` });
       }

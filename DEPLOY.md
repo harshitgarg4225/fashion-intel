@@ -76,7 +76,10 @@ MIRA_SESSION_SECRET=<random 32+ chars>
 MIRA_FREE_RENDERS=25
 GOOGLE_CLIENT_ID=...            # same OAuth client as Photos import
 GOOGLE_CLIENT_SECRET=...
+MIRA_ADMIN_EMAILS=you@example.com   # operator dashboard at /admin/metrics
 ```
+
+**Operator dashboard**: `/admin/metrics` (sign in with an email listed in `MIRA_ADMIN_EMAILS`) shows the launch funnel — signups, activation (first render), D1/D7 retention, journal adoption, share views, and referred signups — computed from a local event log (`events.jsonl`); no third-party analytics. The 14-day launch plan built around these numbers is in LAUNCH.md.
 
 Add `https://YOUR-DOMAIN/auth/google/callback` as a second authorized redirect URI on the Google OAuth client. In this mode:
 

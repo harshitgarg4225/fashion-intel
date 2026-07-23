@@ -21,10 +21,17 @@ function AuthGate({ mode }) {
     return (
       <div className="auth-gate">
         <div className="auth-card">
+          <p className="auth-eyebrow">Your AI clothing journal</p>
           <h1>Mira</h1>
-          <p>Your AI clothing journal — get dressed by feeling, remember what you wore. Sign in to begin.</p>
+          <p className="auth-tagline">Tell Mira how you want to feel. She dresses you from your own closet — and remembers what you wore.</p>
           {arrivedByInvite && <p className="auth-invite">You were invited by a friend — you'll both earn bonus render credits.</p>}
           <a className="google-signin" href="/auth/google">Continue with Google</a>
+          <p className="auth-fineprint">Free renders included · no card needed</p>
+          <ol className="auth-steps">
+            <li><strong>Snap your clothes</strong> — or import from Google Photos. Mira catalogs every piece.</li>
+            <li><strong>Say the feeling</strong> — “confident”, “cozy”, “date night” — and see the look on you.</li>
+            <li><strong>Journal it</strong> — a mirror selfie a day becomes your weeks in looks, streaks and all.</li>
+          </ol>
           <p className="auth-fineprint">Your photos and closet are private to your account.</p>
           <p className="auth-fineprint"><a href="/legal/terms">Terms</a> · <a href="/legal/privacy">Privacy</a> · <a href="/legal/refunds">Refunds</a> · <a href="/legal/contact">Contact</a></p>
         </div>

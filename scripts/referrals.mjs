@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { baseDataDir, currentUser, isMultiTenant } from "./tenant.mjs";
+import { trackEvent } from "./metrics.mjs";
 
 // The referral loop: share pages carry the sharer's code, signups record who
 // referred them, and both sides earn render credits when the referred user
@@ -71,6 +72,7 @@ export async function maybeGrantReferralBonus(env = {}) {
     referrer.referralEarned = (Number(referrer.referralEarned) || 0) + bonuses.referrer;
   }
   await writeAtomic(usersFile(), users);
+  trackEvent("referral_activated", { referrerId: record.referredBy });
 }
 
 // Summary for /api/me: invite link, how many friends joined, credits earned.
