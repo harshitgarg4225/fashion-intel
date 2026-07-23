@@ -4,8 +4,10 @@ const ANTHROPIC_VERSION = "2023-06-01";
 
 export function resolveStylistProvider(setting) {
   const explicit = (setting("WARDROBE_STYLIST_PROVIDER") || "").trim().toLowerCase();
-  if (explicit === "anthropic" || explicit === "openai") return explicit;
+  if (["anthropic", "openai", "gemini"].includes(explicit)) return explicit;
   if (setting("ANTHROPIC_API_KEY").trim()) return "anthropic";
+  if (setting("OPENAI_API_KEY").trim()) return "openai";
+  if (setting("GEMINI_API_KEY").trim()) return "gemini";
   return "openai";
 }
 
@@ -64,10 +66,53 @@ async function anthropicStructured({ key, baseUrl, model, prompt, images = [], s
   return toolUse.input;
 }
 
+// Gemini's responseSchema is an OpenAPI-style subset: no additionalProperties,
+// and nullability is expressed with `nullable` rather than anyOf/type arrays.
+export function geminiSchema(schema) {
+  if (Array.isArray(schema)) return schema.map(geminiSchema);
+  if (!schema || typeof schema !== "object") return schema;
+  const nullableAnyOf = Array.isArray(schema.anyOf) && schema.anyOf.length === 2 && schema.anyOf.some((entry) => entry?.type === "null");
+  if (nullableAnyOf) {
+    const real = schema.anyOf.find((entry) => entry?.type !== "null");
+    return { ...geminiSchema(real), nullable: true };
+  }
+  const copy = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === "additionalProperties" || key === "$schema") continue;
+    if (key === "type" && Array.isArray(value)) {
+      copy.type = value.find((entry) => entry !== "null") || "string";
+      if (value.includes("null")) copy.nullable = true;
+      continue;
+    }
+    copy[key] = geminiSchema(value);
+  }
+  return copy;
+}
+
+async function geminiStructured({ key, baseUrl, model, prompt, images = [], schema }) {
+  const parts = [
+    ...images.map((image) => ({ inline_data: { mime_type: image.mime, data: image.data.toString("base64") } })),
+    { text: prompt },
+  ];
+  const response = await fetch(`${baseUrl}/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: { responseMimeType: "application/json", responseSchema: geminiSchema(schema) },
+    }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error?.message || `Gemini analysis failed (${response.status})`);
+  const text = result.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("");
+  if (!text) throw new Error("Gemini analysis returned no structured result");
+  return JSON.parse(text);
+}
+
 export async function structuredAnalysis({ setting, prompt, images = [], schema, schemaName }) {
   const provider = resolveStylistProvider(setting);
   void audit({ type: "vision", provider, schema: schemaName, images: images.length });
-  void recordUsage("vision");
+  void recordUsage("vision", provider);
   if (provider === "anthropic") {
     const key = setting("ANTHROPIC_API_KEY").trim();
     if (!key) throw new Error("ANTHROPIC_API_KEY is not configured");
@@ -79,6 +124,18 @@ export async function structuredAnalysis({ setting, prompt, images = [], schema,
       images,
       schema,
       schemaName,
+    });
+  }
+  if (provider === "gemini") {
+    const key = setting("GEMINI_API_KEY").trim();
+    if (!key) throw new Error("GEMINI_API_KEY is not configured");
+    return geminiStructured({
+      key,
+      baseUrl: (setting("GEMINI_API_BASE_URL") || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, ""),
+      model: setting("GEMINI_MODEL") || "gemini-2.5-flash",
+      prompt,
+      images,
+      schema,
     });
   }
   const key = setting("OPENAI_API_KEY").trim();

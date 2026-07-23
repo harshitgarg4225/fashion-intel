@@ -277,7 +277,8 @@ export function outfitStudioApi(options = {}) {
     const imageProvider = setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase();
     const hasOpenAIKey = Boolean((imageProvider === "gemini" ? setting("GEMINI_API_KEY") : setting("OPENAI_API_KEY")).trim());
     const provider = resolveStylistProvider(setting);
-    const hasStylistKey = provider === "anthropic" ? Boolean(setting("ANTHROPIC_API_KEY").trim()) : Boolean(setting("OPENAI_API_KEY").trim());
+    const stylistKeyName = { anthropic: "ANTHROPIC_API_KEY", gemini: "GEMINI_API_KEY", openai: "OPENAI_API_KEY" }[provider];
+    const hasStylistKey = Boolean(setting(stylistKeyName).trim());
     let hasModelReference = false;
     try {
       hasModelReference = (await stat(referencePathFn())).isFile();
@@ -293,6 +294,7 @@ export function outfitStudioApi(options = {}) {
       hasStylistKey,
       hasModelReference,
       stylistProvider: provider,
+      imageProvider,
       tops,
       bottoms,
     };
@@ -630,7 +632,7 @@ export function outfitStudioApi(options = {}) {
         const status = await setupStatus();
         if (!status.ready) {
           const missing = [
-            !status.hasOpenAIKey && "OPENAI_API_KEY in .env",
+            !status.hasOpenAIKey && `${status.imageProvider === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY"} in .env`,
             !status.hasStylistKey && "an API key for the stylist provider",
             !status.hasModelReference && "a PNG photo of yourself at data/model-reference.png",
             (!status.tops || !status.bottoms) && "at least one imported top and one bottom",

@@ -327,7 +327,7 @@ export async function openAIEdit({ key, baseUrl, model, prompt, images, size, ba
   const encoded = result.data?.[0]?.b64_json;
   if (!encoded) throw new Error("OpenAI response did not contain image data");
   void audit({ type: "image", provider: "openai", model, size });
-  void recordUsage("image");
+  void recordUsage("image", "openai");
   return Buffer.from(encoded, "base64");
 }
 
@@ -353,7 +353,7 @@ async function geminiEdit({ key, baseUrl, model, prompt, images, size }) {
   const encoded = (inline?.inlineData || inline?.inline_data)?.data;
   if (!encoded) throw new Error("Gemini response did not contain image data");
   void audit({ type: "image", provider: "gemini", model, size });
-  void recordUsage("image");
+  void recordUsage("image", "gemini");
   return Buffer.from(encoded, "base64");
 }
 

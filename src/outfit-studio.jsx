@@ -419,7 +419,7 @@ export function OutfitStudio({ items, initialMood = null }) {
   const setupMessage = useMemo(() => {
     if (!config || config.ready) return null;
     const missing = [
-      !config.hasOpenAIKey && "add OPENAI_API_KEY to .env",
+      !config.hasOpenAIKey && `add ${config.imageProvider === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY"} to .env`,
       !config.hasStylistKey && `add an API key for the ${config.stylistProvider} stylist`,
       !config.hasModelReference && "add your reference photo (the import tray can capture one)",
       (!config.tops || !config.bottoms) && "import at least one top and one bottom",
@@ -491,7 +491,7 @@ export function OutfitStudio({ items, initialMood = null }) {
         </div>
         {config?.stylistProvider && (
           <p className="stylist-note">
-            Stylist runs on {config.stylistProvider === "anthropic" ? "Claude" : "OpenAI"}; photos render with gpt-image.
+            Stylist runs on {{ anthropic: "Claude", gemini: "Gemini", openai: "OpenAI" }[config.stylistProvider] || "OpenAI"}; photos render with {config.imageProvider === "gemini" ? "Gemini" : "gpt-image"}.
             {usage?.today && ` Today: ${usage.today.imageCalls} renders, ≈$${usage.today.estCostUsd.toFixed(2)}${usage.budgetUsd ? ` of $${usage.budgetUsd.toFixed(2)} budget` : ""}.`}
           </p>
         )}

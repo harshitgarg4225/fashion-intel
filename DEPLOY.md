@@ -14,6 +14,18 @@ Mira runs as a single Node service (Vite build + `vite preview` serving the app 
 
 Keys can be entered two ways: as Railway service variables (preferred for a deployment), or pasted into the app's in-tray setup screen (stored in `data/settings.json` on the volume; env always wins).
 
+### All-Google stack (GCP credits)
+
+The entire AI stack — garment detection, the stylist, and image rendering — can run on a single Gemini key, which is the cheapest path and lets Google Cloud startup credits cover all AI spend:
+
+```
+GEMINI_API_KEY=...
+WARDROBE_IMAGE_PROVIDER=gemini
+WARDROBE_STYLIST_PROVIDER=gemini    # optional; auto-selected when Gemini is the only key
+```
+
+**Privacy requirement**: create the API key on a GCP project **with billing enabled** (paid tier — your credits absorb the cost). Do NOT serve real users on the AI Studio free tier: its terms allow Google to use submitted content to improve their products, which would contradict the privacy policy this app ships (`/legal/privacy`). Free tier is fine for your own development only.
+
 ## 2. Create the Railway service
 
 1. Railway → **New Project → Deploy from GitHub repo** → pick this repository, branch `main` (or your working branch). `railway.json` already sets the build (`npm ci && npm run build`) and start (`npx vite preview`) commands; Railway injects `PORT` and the server binds `0.0.0.0` automatically when it detects Railway.

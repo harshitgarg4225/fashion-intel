@@ -86,7 +86,8 @@ Every generation step is reviewable: approve, reject, or regenerate with a corre
 | `OPENAI_IMAGE_QUALITY` | `high` | Image quality |
 | `ANTHROPIC_API_KEY` | Optional | Runs detection + stylist on Claude when set |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5` | Claude stylist model |
-| `WARDROBE_STYLIST_PROVIDER` | auto | Force `openai` or `anthropic` for detection + stylist |
+| `WARDROBE_STYLIST_PROVIDER` | auto | Force `openai`, `anthropic`, or `gemini` for detection + stylist |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini detection + stylist model (all-Google stack) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional | Enables Google Photos import |
 | `WARDROBE_FACE_FILTER` | `on` | `off` disables the only-my-clothes filter |
 | `WARDROBE_MODEL_REFERENCE` | `data/model-reference.png` | Your reference photo |

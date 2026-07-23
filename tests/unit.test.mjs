@@ -148,3 +148,35 @@ test("referral bonus credits both sides exactly once, on the referred user's fir
   assert.ok(code.length >= 8 && code !== "alice-code");
   initTenancy(null);
 });
+
+test("geminiSchema converts anyOf-null and type arrays to nullable, strips additionalProperties", async () => {
+  const { geminiSchema } = await import("../scripts/ai-providers.mjs");
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      topId: { type: "string" },
+      outerId: { anyOf: [{ type: "string" }, { type: "null" }] },
+      price: { type: ["number", "null"] },
+      tags: { type: "array", items: { type: "object", additionalProperties: false, properties: { x: { type: "string" } } } },
+    },
+    required: ["topId"],
+  };
+  const out = geminiSchema(schema);
+  assert.equal(out.additionalProperties, undefined);
+  assert.deepEqual(out.properties.outerId, { type: "string", nullable: true });
+  assert.deepEqual(out.properties.price, { type: "number", nullable: true });
+  assert.equal(out.properties.tags.items.additionalProperties, undefined);
+  assert.deepEqual(out.required, ["topId"]);
+  assert.equal(schema.properties.outerId.anyOf.length, 2, "input must not be mutated");
+});
+
+test("resolveStylistProvider falls back openai → anthropic-by-key → gemini-by-key", async () => {
+  const { resolveStylistProvider } = await import("../scripts/ai-providers.mjs");
+  const settingWith = (values) => (name, fallback = "") => values[name] ?? fallback;
+  assert.equal(resolveStylistProvider(settingWith({ WARDROBE_STYLIST_PROVIDER: "gemini" })), "gemini");
+  assert.equal(resolveStylistProvider(settingWith({ ANTHROPIC_API_KEY: "k" })), "anthropic");
+  assert.equal(resolveStylistProvider(settingWith({ OPENAI_API_KEY: "k", GEMINI_API_KEY: "k" })), "openai");
+  assert.equal(resolveStylistProvider(settingWith({ GEMINI_API_KEY: "k" })), "gemini", "gemini-only setups need no OpenAI key");
+  assert.equal(resolveStylistProvider(settingWith({})), "openai");
+});
