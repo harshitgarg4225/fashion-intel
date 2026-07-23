@@ -1,6 +1,6 @@
 # Mira — Product Roadmap
 
-The product promise: **"I want to feel X today" → open Mira → see yourself dressed for that feeling, from clothes you actually own.**
+**Mira — Your AI clothing journal.** The product promise: **"I want to feel X today" → open Mira → see yourself dressed for that feeling, from clothes you actually own — and remember what you wore.**
 
 Legend: ✅ shipped · 🔜 next up · 🧭 explored / needs design
 
@@ -15,6 +15,14 @@ Legend: ✅ shipped · 🔜 next up · 🧭 explored / needs design
 - ✅ Favorites (keep the looks that worked; they sort first)
 - ✅ "Wear it" button on every look → builds a wear history that powers Insights and the Journal
 - ✅ Journal: week-by-week view of what you actually wore, day by day, with week navigation and today highlighted
+- ✅ Photo-first journaling: "Log what I wore today" — snap a mirror selfie with an optional note and feeling; no AI call, no render credits, ever (see UX-REVIEW.md)
+- ✅ Tap-to-backfill: empty past days in the week are tappable to log up to two months back; entries are removable
+- ✅ Journal days power the streak and week stats alongside "Wear it" looks; photo logs lead the day in the weekly collage
+- ✅ "Log today" PWA shortcut (`/?view=journal&log=1`) for a camera-to-journal flow from the home screen
+- 🔜 "Wear it" with a date picker so styled looks can backfill past days
+- 🔜 Daily "what did you wear?" reminder notification at a chosen hour
+- 🔜 Garment tagging on journal photos (reuse the import detection) so real-life wears feed most-worn stats
+- 🔜 Month view once weeks of entries accumulate
 - ✅ Weekly collage: a shareable editorial card of your week — the looks you wore Monday through Sunday, with stats (days dressed, most-worn piece, the feelings of the week)
 - ✅ Render-ready notifications: a browser notification fires when a look finishes generating while the tab is in the background
 - ✅ PWA shortcuts + deep links (`/?view=outfits`, `/?feel=confident`) for a one-tap "dress me" flow from the home screen

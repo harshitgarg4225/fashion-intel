@@ -1,7 +1,7 @@
 {
   "name": "Mira",
   "short_name": "Mira",
-  "description": "Dress how you feel \u2014 from your own closet, on your own body.",
+  "description": "Your AI clothing journal \u2014 dress how you feel and remember what you wore.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -16,6 +16,12 @@
     }
   ],
   "shortcuts": [
+    {
+      "name": "Log today",
+      "short_name": "Log today",
+      "description": "Snap what you wore into your journal",
+      "url": "/?view=journal&log=1"
+    },
     {
       "name": "Dress me",
       "short_name": "Dress me",

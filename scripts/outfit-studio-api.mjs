@@ -52,6 +52,8 @@ export function outfitStudioApi(options = {}) {
   const outfitImagesDirFn = () => path.join(dataDir(), "outfit-images");
   const inspirationDirFn = () => path.join(dataDir(), "inspiration");
   const profileFileFn = () => path.join(dataDir(), "profile.json");
+  const journalFileFn = () => path.join(dataDir(), "journal.json");
+  const journalDirFn = () => path.join(dataDir(), "journal-photos");
   const libraryFileFn = () => path.join(dataDir(), "library.json");
   const importedDirFn = () => path.join(dataDir(), "imported");
   // Shares are resolved publicly across tenants, so the index is global.
@@ -114,6 +116,11 @@ export function outfitStudioApi(options = {}) {
     return records[index];
   }
 
+  async function loadJournal() {
+    try { return JSON.parse(await readFile(journalFileFn(), "utf8")); }
+    catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  }
+
   async function loadProfile() {
     try { return JSON.parse(await readFile(profileFileFn(), "utf8")); }
     catch (error) { if (error.code === "ENOENT") return { styleNotes: "", hardRules: "" }; throw error; }
@@ -142,13 +149,20 @@ export function outfitStudioApi(options = {}) {
     });
     const records = await loadOutfits();
     const library = await loadLibrary();
+    const journal = await loadJournal();
     const byId = new Map(library.map((item) => [item.id, item]));
+    // A day's photo log (what you actually wore) leads; styled looks follow.
     const days = weekDates.map((date) => ({
       date,
       weekday: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][(new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7],
-      looks: records
-        .filter((record) => (record.wornAt || []).some((worn) => worn.slice(0, 10) === date))
-        .map((record) => ({ id: record.id, name: record.name, mood: record.mood, image: record.image })),
+      looks: [
+        ...journal
+          .filter((entry) => entry.date === date)
+          .map((entry) => ({ id: entry.id, name: entry.note || "What I wore", mood: entry.mood || null, image: entry.image, journal: true })),
+        ...records
+          .filter((record) => (record.wornAt || []).some((worn) => worn.slice(0, 10) === date))
+          .map((record) => ({ id: record.id, name: record.name, mood: record.mood, image: record.image })),
+      ],
     }));
     const pieceCounts = new Map();
     const moods = new Map();
@@ -167,7 +181,7 @@ export function outfitStudioApi(options = {}) {
       totalWears: days.reduce((total, day) => total + day.looks.length, 0),
       topPiece: topPieceEntry ? { name: byId.get(topPieceEntry[0])?.name || "a piece", count: topPieceEntry[1] } : null,
       moods: [...moods.entries()].sort((a, b) => b[1] - a[1]).map(([mood]) => mood).slice(0, 3),
-      streak: weekDates.includes(new Date().toISOString().slice(0, 10)) ? computeStreak(records, new Date().toISOString().slice(0, 10)) : 0,
+      streak: weekDates.includes(new Date().toISOString().slice(0, 10)) ? computeStreak(records, new Date().toISOString().slice(0, 10), journal.map((entry) => entry.date)) : 0,
     };
     return { start: weekDates[0], end: weekDates[6], weekDates, days, stats };
   }
@@ -191,7 +205,8 @@ export function outfitStudioApi(options = {}) {
       let placed = false;
       if (look) {
         try {
-          const bytes = await sharp(path.join(outfitImagesDirFn(), `${look.id}.png`)).resize(TILE, TILE, { fit: "cover" }).png().toBuffer();
+          const source = look.journal ? path.join(journalDirFn(), `${look.id}.jpg`) : path.join(outfitImagesDirFn(), `${look.id}.png`);
+          const bytes = await sharp(source).resize(TILE, TILE, { fit: "cover" }).png().toBuffer();
           composites.push({ input: bytes, left, top });
           placed = true;
         } catch {}
@@ -206,7 +221,7 @@ export function outfitStudioApi(options = {}) {
     const range = `${pretty(week.start)} — ${pretty(week.end)}, ${week.end.slice(0, 4)}`;
     const chrome = `<svg width="1080" height="1350">
       <text x="540" y="84" text-anchor="middle" font-size="12" letter-spacing="6" fill="#000000">THE WEEK IN LOOKS</text>
-      <text x="540" y="150" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" letter-spacing="6" font-size="40" letter-spacing="3" fill="#000000">${range}</text>
+      <text x="540" y="150" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="40" letter-spacing="3" fill="#000000">${range}</text>
       <rect x="512" y="176" width="56" height="1" fill="#000000"/>
       ${svgParts.join("\n")}
       <text x="540" y="920" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" letter-spacing="2" font-size="24" fill="#6e6e6e">${weekSummaryLine(week.stats)}</text>
@@ -385,7 +400,7 @@ export function outfitStudioApi(options = {}) {
 
   async function handler(req, res, next) {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith(`${API_ROOT}`) && !url.pathname.startsWith("/api/review") && !url.pathname.startsWith("/api/shares") && !url.pathname.startsWith("/s/") && url.pathname !== "/api/profile" && url.pathname !== "/api/usage" && url.pathname !== "/api/capsule") return next();
+    if (!url.pathname.startsWith(`${API_ROOT}`) && !url.pathname.startsWith("/api/review") && !url.pathname.startsWith("/api/journal") && !url.pathname.startsWith("/api/shares") && !url.pathname.startsWith("/s/") && url.pathname !== "/api/profile" && url.pathname !== "/api/usage" && url.pathname !== "/api/capsule") return next();
     try {
       const publicMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{10,64})(\/og\.png)?$/);
       if (publicMatch && req.method === "GET") {
@@ -458,13 +473,13 @@ export function outfitStudioApi(options = {}) {
           const subtitle = [record.mood ? `feels ${record.mood}` : "", ...(record.occasion || [])].filter(Boolean).join(" · ");
           return sendHtml(200, pageShell(`${record.name} — Mira`, {
             meta: meta(`${record.name} — styled by Mira`, record.reason || "A look styled from a real closet, rendered by Mira."),
-            body: `<p class="eyebrow">A look styled by Mira</p><h1>${escapeXml(record.name)}</h1>${subtitle ? `<p class="sub">${escapeXml(subtitle)}</p>` : '<div class="rule"></div>'}<img class="hero" src="/s/${share.token}/og.png" alt="${escapeXml(record.name)}">${record.reason ? `<p class="sub">"${escapeXml(record.reason)}"</p>` : ""}<a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · DRESS HOW YOU FEEL</p>`,
+            body: `<p class="eyebrow">A look styled by Mira</p><h1>${escapeXml(record.name)}</h1>${subtitle ? `<p class="sub">${escapeXml(subtitle)}</p>` : '<div class="rule"></div>'}<img class="hero" src="/s/${share.token}/og.png" alt="${escapeXml(record.name)}">${record.reason ? `<p class="sub">"${escapeXml(record.reason)}"</p>` : ""}<a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · YOUR AI CLOTHING JOURNAL</p>`,
           }));
         }
         const week = await enterShareTenant(() => buildWeek(share.weekStart));
         return sendHtml(200, pageShell("A week of looks — Mira", {
           meta: meta("A week of looks — Mira", weekSummaryLine(week.stats)),
-          body: `<p class="eyebrow">A week dressed by Mira</p><h1>The Week in Looks</h1><div class="rule"></div><img class="hero" src="/s/${share.token}/og.png" alt="Weekly collage of looks"><p class="sub">${weekSummaryLine(week.stats)}</p><a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · DRESS HOW YOU FEEL</p>`,
+          body: `<p class="eyebrow">A week dressed by Mira</p><h1>The Week in Looks</h1><div class="rule"></div><img class="hero" src="/s/${share.token}/og.png" alt="Weekly collage of looks"><p class="sub">${weekSummaryLine(week.stats)}</p><a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · YOUR AI CLOTHING JOURNAL</p>`,
         }));
       }
       if (url.pathname === "/api/shares" && req.method === "GET") {
@@ -492,6 +507,50 @@ export function outfitStudioApi(options = {}) {
         };
         await atomicJson(profileFileFn(), profile);
         return json(res, 200, profile);
+      }
+      // The journal is the heart of the product: logging what you actually
+      // wore is a plain photo save — no AI, no render credits, ever.
+      if (url.pathname === "/api/journal/log" && req.method === "POST") {
+        const input = await body(req, 16 * 1024 * 1024);
+        const photo = decodeDataUrl(input.photoDataUrl);
+        if (!photo) return json(res, 400, { error: "Add a photo of what you wore." });
+        const today = new Date().toISOString().slice(0, 10);
+        const date = typeof input.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? input.date : today;
+        if (date > today) return json(res, 400, { error: "That day hasn't happened yet." });
+        const floor = new Date();
+        floor.setUTCDate(floor.getUTCDate() - 62);
+        if (date < floor.toISOString().slice(0, 10)) return json(res, 400, { error: "Journal entries can go back up to two months." });
+        const entry = {
+          id: randomUUID(),
+          date,
+          note: typeof input.note === "string" ? input.note.trim().slice(0, 280) : "",
+          mood: typeof input.mood === "string" ? input.mood.trim().slice(0, 60) : "",
+          createdAt: new Date().toISOString(),
+        };
+        await mkdir(journalDirFn(), { recursive: true });
+        const bytes = await sharp(photo.data).rotate().resize(1080, 1350, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+        await writeFile(path.join(journalDirFn(), `${entry.id}.jpg`), bytes, { mode: 0o600 });
+        entry.image = `/api/journal/photos/${entry.id}.jpg`;
+        const entries = await loadJournal();
+        await atomicJson(journalFileFn(), [...entries, entry]);
+        return json(res, 201, entry);
+      }
+      const journalPhotoMatch = url.pathname.match(/^\/api\/journal\/photos\/([\w.-]+)$/i);
+      if (journalPhotoMatch && req.method === "GET") {
+        const file = path.join(journalDirFn(), path.basename(journalPhotoMatch[1]));
+        await stat(file);
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "no-store");
+        return res.end(await readFile(file));
+      }
+      const journalDeleteMatch = url.pathname.match(/^\/api\/journal\/log\/([a-f0-9-]{36})$/i);
+      if (journalDeleteMatch && req.method === "DELETE") {
+        const entries = await loadJournal();
+        const target = entries.find((entry) => entry.id === journalDeleteMatch[1]);
+        if (!target) return json(res, 404, { error: "Entry not found" });
+        await atomicJson(journalFileFn(), entries.filter((entry) => entry.id !== target.id));
+        await rm(path.join(journalDirFn(), `${target.id}.jpg`), { force: true });
+        return json(res, 200, { deleted: true });
       }
       const reviewMatch = url.pathname.match(/^\/api\/review\/week(\/collage\.png|\/share)?$/);
       if (reviewMatch && ((reviewMatch[1] === "/share" && req.method === "POST") || (reviewMatch[1] !== "/share" && req.method === "GET"))) {

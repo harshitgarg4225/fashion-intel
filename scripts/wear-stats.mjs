@@ -10,8 +10,10 @@ export function wornDaySet(outfits) {
 
 // Consecutive days with at least one logged wear, ending today — or ending
 // yesterday, so the streak reads as "alive" before you've dressed today.
-export function computeStreak(outfits, todayStr) {
+// extraDays lets journal entries (photo logs) count toward the streak too.
+export function computeStreak(outfits, todayStr, extraDays = []) {
   const days = wornDaySet(outfits);
+  for (const day of extraDays) days.add(day);
   const cursor = new Date(`${todayStr}T00:00:00Z`);
   if (!days.has(todayStr)) cursor.setUTCDate(cursor.getUTCDate() - 1);
   let streak = 0;

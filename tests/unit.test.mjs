@@ -105,3 +105,10 @@ test("computeStreak counts consecutive worn days and stays alive before today's 
   assert.equal(computeStreak(outfits, "2026-07-23"), 0, "a missed day breaks it");
   assert.equal(computeStreak([], "2026-07-20"), 0);
 });
+
+test("computeStreak counts journal photo-log days alongside worn looks", async () => {
+  const { computeStreak } = await import("../scripts/wear-stats.mjs");
+  const outfits = [{ wornAt: ["2026-07-19T08:00:00Z"] }];
+  assert.equal(computeStreak(outfits, "2026-07-20", ["2026-07-20", "2026-07-18"]), 3, "journal days bridge and extend the streak");
+  assert.equal(computeStreak([], "2026-07-20", ["2026-07-20"]), 1, "a journal-only day starts a streak");
+});

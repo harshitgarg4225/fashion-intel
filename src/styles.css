@@ -1751,3 +1751,15 @@ button { font: inherit; }
 .skeleton-tile { border: 0; background: linear-gradient(100deg, #f2f2f2 40%, #fafafa 50%, #f2f2f2 60%); background-size: 200% 100%; }
 .status.manual-share a { color: var(--ink); }
 .journal-collage { letter-spacing: .22em; }
+
+/* Mobile: the four view labels overflowed a centered flex row on narrow
+   phones, cutting "Closet" off-screen. Let them wrap into two rows. */
+@media (max-width: 640px) {
+  .masthead .view-switch {
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .masthead .view-switch button { white-space: nowrap; }
+}

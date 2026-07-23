@@ -12,7 +12,7 @@ function AuthGate({ mode }) {
       <div className="auth-gate">
         <div className="auth-card">
           <h1>Mira</h1>
-          <p>Your closet, styled by feeling. Sign in to begin.</p>
+          <p>Your AI clothing journal — get dressed by feeling, remember what you wore. Sign in to begin.</p>
           <a className="google-signin" href="/auth/google">Continue with Google</a>
           <p className="auth-fineprint">Your photos and closet are private to your account.</p>
           <p className="auth-fineprint"><a href="/legal/terms">Terms</a> · <a href="/legal/privacy">Privacy</a> · <a href="/legal/refunds">Refunds</a> · <a href="/legal/contact">Contact</a></p>
@@ -183,7 +183,7 @@ function PassphraseGate() {
 function initialViewState() {
   const params = new URLSearchParams(window.location.search);
   const view = ["outfits", "insights", "journal"].includes(params.get("view")) ? params.get("view") : params.get("feel") ? "outfits" : "closet";
-  return { view, feel: params.get("feel") || null };
+  return { view, feel: params.get("feel") || null, log: params.get("log") === "1" };
 }
 
 const STORAGE_KEY = "open-wardrobe-edits-v1";
@@ -794,13 +794,18 @@ export function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [{ view, feel }, setViewState] = useState(initialViewState);
+  const [{ view, feel, log }, setViewState] = useState(initialViewState);
   const setView = (nextView) => setViewState((current) => ({ ...current, view: nextView }));
   const [query, setQuery] = useState("");
   const [authRequired, setAuthRequired] = useState(false);
   const [authMode, setAuthMode] = useState("passphrase");
+  const [hosted, setHosted] = useState(false);
 
   useEffect(() => {
+    fetch("/api/auth/status", { cache: "no-store" })
+      .then((statusResponse) => statusResponse.json())
+      .then((status) => setHosted(status.mode === "google"))
+      .catch(() => {});
     fetch("/api/import/wardrobe", { cache: "no-store" })
       .then((response) => {
         if (response.status === 401) {
@@ -936,7 +941,7 @@ export function App() {
     <div className={`app-shell${selectedItem ? " has-selection" : ""}`}>
       <main className="gallery-pane">
         <header className="masthead">
-          <p className="masthead-eyebrow">Dress how you feel</p>
+          <p className="masthead-eyebrow">Your AI clothing journal</p>
           <h1 className="wordmark">Mira</h1>
           <AccountChip />
           <nav className="view-switch" aria-label="Choose view">
@@ -995,7 +1000,7 @@ export function App() {
         ) : view === "insights" ? (
           <Insights items={items} />
         ) : view === "journal" ? (
-          <Journal />
+          <Journal initialLog={log} />
         ) : (
           <>
             {error && <p className="status error">{error}</p>}
@@ -1007,13 +1012,21 @@ export function App() {
             {!error && !loading && !items.length && (
               <div className="welcome-card">
                 <p className="masthead-eyebrow">Welcome</p>
-                <h2>Your closet, three steps away</h2>
-                <ol>
-                  <li><strong>Keys</strong> — open the tray (bottom-left) and paste your AI keys, or set them in the environment.</li>
-                  <li><strong>Your photo</strong> — capture a reference photo with your camera; every look is rendered on you.</li>
-                  <li><strong>First piece</strong> — drop in any photo of your clothes, or import from Google Photos or a folder.</li>
-                </ol>
-                <p className="welcome-hint">Everything stays on this machine. The stylist meets you in the Outfit Studio once one top and one bottom are in.</p>
+                <h2>Your clothing journal, three steps away</h2>
+                {hosted ? (
+                  <ol>
+                    <li><strong>Your photo</strong> — capture a reference photo with your camera (open the tray, bottom-left); every look is rendered on you.</li>
+                    <li><strong>First pieces</strong> — drop in photos of your clothes, or import from Google Photos or a folder.</li>
+                    <li><strong>Get dressed & journal</strong> — pick a feeling in the Outfit Studio, then log what you actually wore in the Journal.</li>
+                  </ol>
+                ) : (
+                  <ol>
+                    <li><strong>Keys</strong> — open the tray (bottom-left) and paste your AI keys, or set them in the environment.</li>
+                    <li><strong>Your photo</strong> — capture a reference photo with your camera; every look is rendered on you.</li>
+                    <li><strong>First piece</strong> — drop in any photo of your clothes, or import from Google Photos or a folder.</li>
+                  </ol>
+                )}
+                <p className="welcome-hint">{hosted ? "Your closet is private to your account. The stylist meets you in the Outfit Studio once one top and one bottom are in." : "Everything stays on this machine. The stylist meets you in the Outfit Studio once one top and one bottom are in."}</p>
               </div>
             )}
             {!error && !loading && !!items.length && !visibleItems.length && <p className="status empty">No pieces match that search.</p>}

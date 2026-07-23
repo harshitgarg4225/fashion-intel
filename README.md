@@ -2,7 +2,7 @@
 
 # Mira
 
-Dress how you feel.
+Your AI clothing journal.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-191919?style=flat-square)](LICENSE)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-191919?style=flat-square)](package.json)
@@ -16,7 +16,7 @@ Dress how you feel.
 - **Only *your* clothes** — with your reference photo in place, the face filter keeps garments worn by you (or shown unworn) and skips friends, mannequins, and store photos automatically.
 - **Closet** — browse by category, search by name/tag/category, see per-category counts and your wardrobe's dominant color palette. Mark pieces as in-the-laundry (the stylist skips them), add prices, and get flagged when an import looks like a duplicate you already own.
 - **Insights** — most-worn and never-worn pieces, cost-per-wear, color balance, category bars, and gap advice ("one more bottom unlocks 14 new pairings"), all computed from your own wear history.
-- **Journal** — your week in looks: what you actually wore, day by day, with wear **streaks** and a one-tap **weekly collage**.
+- **Journal** — the heart of Mira: snap what you actually wore (a mirror selfie is enough — no AI, no credits) with a note and a feeling, or log a styled look with **Wear it**. Week by week, day by day, with wear **streaks**, tap-to-backfill for missed days, and a one-tap **weekly collage**.
 - **Share loops** — every look and every week can become a **public share link**: a beautiful page with the render, the story, rich link previews (OG images) in WhatsApp/iMessage/X, and a "Get dressed by Mira" call-to-action. Native share sheet on mobile, copy-link on desktop, revocable any time, rate-limited, and never exposing anything you didn't explicitly share.
 - **Trust built in** — a local audit log of every AI call, a daily cost meter with an optional hard budget (`WARDROBE_DAILY_BUDGET`), and `npm run backup` / `backup:wipe` to export or erase everything. First run captures your reference photo in-app via webcam or upload.
 

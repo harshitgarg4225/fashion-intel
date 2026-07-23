@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { CaretLeft, CaretRight, DownloadSimple, ShareNetwork } from "@phosphor-icons/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CaretLeft, CaretRight, DownloadSimple, Plus, ShareNetwork, X } from "@phosphor-icons/react";
 import { OptimizedImage } from "./OptimizedImage.jsx";
 import { deliverShare } from "./share-utils.js";
 import "./journal.css";
+
+const LOG_FEELINGS = ["confident", "effortless", "cozy", "bold", "romantic", "casual"];
 
 function formatRange(start, end) {
   const options = { month: "long", day: "numeric" };
@@ -11,7 +13,105 @@ function formatRange(start, end) {
   return `${from.toLocaleDateString(undefined, options)} — ${to.toLocaleDateString(undefined, options)}`;
 }
 
-export function Journal() {
+function prettyDay(date) {
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+
+const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error || new Error("Could not read that photo."));
+  reader.readAsDataURL(file);
+});
+
+function JournalLogger({ date, today, onClose, onSaved }) {
+  const [photo, setPhoto] = useState(null);
+  const [note, setNote] = useState("");
+  const [mood, setMood] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const fileRef = useRef(null);
+
+  const pickPhoto = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    setError("");
+    try {
+      setPhoto({ name: file.name, dataUrl: await fileToDataUrl(file) });
+    } catch (readError) {
+      setError(readError.message);
+    }
+  };
+
+  const save = async () => {
+    if (!photo) {
+      setError("Add a photo of what you wore — a mirror selfie works perfectly.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/journal/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoDataUrl: photo.dataUrl, date, note: note.trim(), mood }),
+      });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.error || "Could not save the entry.");
+      onSaved();
+    } catch (requestError) {
+      setError(requestError.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="journal-logger" role="dialog" aria-label="Log what you wore">
+      <div className="journal-logger-head">
+        <p className="journal-logger-title">{date === today ? "What did you wear today?" : `What did you wear on ${prettyDay(date)}?`}</p>
+        <button type="button" className="journal-logger-close" onClick={onClose} aria-label="Close">
+          <X size={16} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="journal-logger-body">
+        <button type="button" className={`journal-photo-pick${photo ? " has-photo" : ""}`} onClick={() => fileRef.current?.click()}>
+          {photo ? <img src={photo.dataUrl} alt="Your outfit today" /> : <span><Plus size={18} aria-hidden="true" /> Add a photo</span>}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={pickPhoto} />
+        <div className="journal-logger-fields">
+          <input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            maxLength={280}
+            placeholder="A note for future you — “first day at the internship”"
+            aria-label="Journal note"
+          />
+          <div className="journal-feelings" role="group" aria-label="How did it feel?">
+            {LOG_FEELINGS.map((feeling) => (
+              <button
+                key={feeling}
+                type="button"
+                className={`journal-feeling${mood === feeling ? " active" : ""}`}
+                aria-pressed={mood === feeling}
+                onClick={() => setMood((current) => current === feeling ? "" : feeling)}
+              >
+                {feeling}
+              </button>
+            ))}
+          </div>
+          <div className="journal-logger-actions">
+            <button type="button" className="journal-collage" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save to journal"}</button>
+          </div>
+          {error && <p className="journal-note journal-share-error" role="alert">{error}</p>}
+          <p className="journal-note">A mirror photo is all it takes. Journaling never uses render credits.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function Journal({ initialLog = false }) {
   const [offset, setOffset] = useState(0);
   const [week, setWeek] = useState(null);
   const [error, setError] = useState("");
@@ -19,6 +119,7 @@ export function Journal() {
   const [shareError, setShareError] = useState("");
   const [manualShareUrl, setManualShareUrl] = useState(null);
   const today = new Date().toISOString().slice(0, 10);
+  const [logDate, setLogDate] = useState(initialLog ? today : null);
 
   const load = useCallback(async (weekOffset) => {
     setError("");
@@ -34,10 +135,22 @@ export function Journal() {
 
   useEffect(() => { load(offset); }, [offset, load]);
 
+  const removeEntry = async (id) => {
+    if (!window.confirm("Remove this journal entry? The photo is deleted too.")) return;
+    try {
+      const response = await fetch(`/api/journal/log/${id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Could not remove the entry.");
+      load(offset);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
   if (error) return <p className="status error">{error}</p>;
   if (!week) return <p className="status">Opening your journal</p>;
 
   const hasWears = week.stats.totalWears > 0;
+  const todayLogged = week.days.some((day) => day.date === today && day.looks.length > 0);
 
   return (
     <section className="journal" aria-label="Wear journal">
@@ -56,13 +169,30 @@ export function Journal() {
               {!!week.stats.moods.length && <> · felt <em>{week.stats.moods.join(", ")}</em></>}
             </p>
           ) : (
-            <p className="journal-summary">No looks logged{offset === 0 ? " yet — tap “Wear it” on today's look" : " this week"}.</p>
+            <p className="journal-summary">Nothing here yet — snap what you wore, or tap “Wear it” on a styled look.</p>
           )}
         </div>
         <button type="button" className="journal-nav" onClick={() => setOffset((current) => Math.max(0, current - 1))} disabled={offset === 0} aria-label="Next week">
           <CaretRight size={16} aria-hidden="true" />
         </button>
       </div>
+
+      {offset === 0 && !logDate && !todayLogged && (
+        <div className="journal-log-cta">
+          <button type="button" className="journal-collage" onClick={() => setLogDate(today)}>
+            <Plus size={15} aria-hidden="true" /> Log what I wore today
+          </button>
+        </div>
+      )}
+
+      {logDate && (
+        <JournalLogger
+          date={logDate}
+          today={today}
+          onClose={() => setLogDate(null)}
+          onSaved={() => { setLogDate(null); load(offset); }}
+        />
+      )}
 
       <div className="journal-week">
         {week.days.map((day) => {
@@ -72,14 +202,26 @@ export function Journal() {
           return (
             <div className={`journal-day${isToday ? " is-today" : ""}`} key={day.date}>
               <span className="journal-day-label">{day.weekday.slice(0, 3)}</span>
-              <div className={`journal-day-frame${look ? "" : " empty"}`}>
-                {look ? (
+              {look ? (
+                <div className="journal-day-frame">
                   <OptimizedImage src={look.image} alt={`${day.weekday}: ${look.name}`} sizes="(max-width: 720px) 45vw, 170px" breakpoints={[160, 240, 340]} />
-                ) : (
-                  <span className="journal-day-empty">{isFuture ? "" : isToday ? "today" : "—"}</span>
-                )}
-              </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="journal-day-frame empty"
+                  disabled={isFuture}
+                  onClick={() => setLogDate(day.date)}
+                  aria-label={isFuture ? undefined : `Log what you wore on ${prettyDay(day.date)}`}
+                  title={isFuture ? undefined : "Log what you wore"}
+                >
+                  <span className="journal-day-empty">{isFuture ? "" : isToday ? "log today" : "+"}</span>
+                </button>
+              )}
               {look && <span className="journal-day-name">{look.name}</span>}
+              {look?.journal && (
+                <button type="button" className="journal-day-remove" onClick={() => removeEntry(look.id)}>remove</button>
+              )}
               {day.looks.length > 1 && <span className="journal-day-extra">+{day.looks.length - 1} more</span>}
             </div>
           );
