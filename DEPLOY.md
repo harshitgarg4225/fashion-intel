@@ -65,7 +65,7 @@ Add `https://YOUR-DOMAIN/auth/google/callback` as a second authorized redirect U
 
 - Visitors see **Continue with Google**; each account gets a private closet at `/data/users/<id>/` on the volume — imports, looks, journal, reference photo, usage, and audit are fully isolated per user.
 - **Your** env API keys serve all users; the in-app key screen is disabled. Each user gets `MIRA_FREE_RENDERS` lifetime render credits (raise a user's `credits` in `data/users.json` to grant more); `WARDROBE_DAILY_BUDGET` still caps each user's daily spend.
-- Share links keep working publicly across users; share management is scoped to the owning account.
+- Share links keep working publicly across users; share management is scoped to the owning account. Every share page's CTA is a **referral link**: a visitor who signs up from it is attributed to the sharer, and when they finish their first render both sides earn credits (`MIRA_REFERRAL_BONUS` for the inviter, default 10; `MIRA_REFERRED_BONUS` for the newcomer, default 5). Users also have a personal invite link ("Invite friends" in the account bar), and share pages count views.
 - The passphrase gate is replaced by SSO. Before charging money, add: terms/privacy pages, a data-deletion path, and billing — see ROADMAP.
 
 ## 6. Payments (Razorpay) & compliance

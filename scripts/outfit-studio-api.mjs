@@ -10,6 +10,7 @@ import { makeSetting } from "./settings-store.mjs";
 import { computeStreak } from "./wear-stats.mjs";
 import { clientIp, isTrustedProxy } from "./request-utils.mjs";
 import { baseDataDir, currentUser, isMultiTenant, runAsUser, tenantDataDir, tenantStorage, userDirFor } from "./tenant.mjs";
+import { refCodeFor, referralBonuses } from "./referrals.mjs";
 
 const API_ROOT = "/api/outfits";
 const IMAGE_ROOT = "/api/outfits/images";
@@ -423,6 +424,19 @@ export function outfitStudioApi(options = {}) {
           return res.end(html);
         };
         const aboutUrl = setting("WARDROBE_ABOUT_URL", "https://github.com/harshitgarg4225/fashion-intel");
+        // In hosted mode the CTA is a referral link: the visitor lands on this
+        // deployment's sign-in carrying the sharer's code, and both sides earn
+        // render credits once the newcomer generates their first look.
+        let ctaUrl = aboutUrl;
+        let ctaNote = "";
+        if (isMultiTenant(options.env) && share?.userId) {
+          const code = await refCodeFor(share.userId).catch(() => null);
+          if (code) {
+            ctaUrl = `/?ref=${code}`;
+            const bonuses = referralBonuses(options.env);
+            ctaNote = `<p class="sub" style="font-size:13px">Join from this link and you both get free renders (+${bonuses.referred} for you).</p>`;
+          }
+        }
         const pageShell = (title, inner) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${inner.meta || ""}<title>${escapeXml(title)}</title><style>
           body{margin:0;background:#ffffff;color:#000000;font-family:Helvetica,Arial,sans-serif;text-align:center}
           .wrap{max-width:560px;margin:0 auto;padding:48px 20px 72px}
@@ -452,6 +466,11 @@ export function outfitStudioApi(options = {}) {
           res.setHeader("Cache-Control", "public, max-age=3600");
           return res.end(image);
         }
+        // Count the visit — page views power the sharer's metrics. og.png
+        // fetches (link-preview crawlers) intentionally don't count.
+        share.views = (Number(share.views) || 0) + 1;
+        share.lastViewedAt = new Date().toISOString();
+        void atomicJson(sharesFileFn(), shares).catch(() => {});
         const proto = (req.headers["x-forwarded-proto"] || "").includes("https") ? "https" : "http";
         const base = `${proto}://${req.headers.host || "localhost"}`;
         const ogUrl = `${base}/s/${share.token}/og.png`;
@@ -473,13 +492,13 @@ export function outfitStudioApi(options = {}) {
           const subtitle = [record.mood ? `feels ${record.mood}` : "", ...(record.occasion || [])].filter(Boolean).join(" · ");
           return sendHtml(200, pageShell(`${record.name} — Mira`, {
             meta: meta(`${record.name} — styled by Mira`, record.reason || "A look styled from a real closet, rendered by Mira."),
-            body: `<p class="eyebrow">A look styled by Mira</p><h1>${escapeXml(record.name)}</h1>${subtitle ? `<p class="sub">${escapeXml(subtitle)}</p>` : '<div class="rule"></div>'}<img class="hero" src="/s/${share.token}/og.png" alt="${escapeXml(record.name)}">${record.reason ? `<p class="sub">"${escapeXml(record.reason)}"</p>` : ""}<a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · YOUR AI CLOTHING JOURNAL</p>`,
+            body: `<p class="eyebrow">A look styled by Mira</p><h1>${escapeXml(record.name)}</h1>${subtitle ? `<p class="sub">${escapeXml(subtitle)}</p>` : '<div class="rule"></div>'}<img class="hero" src="/s/${share.token}/og.png" alt="${escapeXml(record.name)}">${record.reason ? `<p class="sub">"${escapeXml(record.reason)}"</p>` : ""}<a class="cta" href="${escapeXml(ctaUrl)}">Get dressed by Mira</a>${ctaNote}<p class="foot">M I R A · YOUR AI CLOTHING JOURNAL</p>`,
           }));
         }
         const week = await enterShareTenant(() => buildWeek(share.weekStart));
         return sendHtml(200, pageShell("A week of looks — Mira", {
           meta: meta("A week of looks — Mira", weekSummaryLine(week.stats)),
-          body: `<p class="eyebrow">A week dressed by Mira</p><h1>The Week in Looks</h1><div class="rule"></div><img class="hero" src="/s/${share.token}/og.png" alt="Weekly collage of looks"><p class="sub">${weekSummaryLine(week.stats)}</p><a class="cta" href="${escapeXml(aboutUrl)}">Get dressed by Mira</a><p class="foot">M I R A · YOUR AI CLOTHING JOURNAL</p>`,
+          body: `<p class="eyebrow">A week dressed by Mira</p><h1>The Week in Looks</h1><div class="rule"></div><img class="hero" src="/s/${share.token}/og.png" alt="Weekly collage of looks"><p class="sub">${weekSummaryLine(week.stats)}</p><a class="cta" href="${escapeXml(ctaUrl)}">Get dressed by Mira</a>${ctaNote}<p class="foot">M I R A · YOUR AI CLOTHING JOURNAL</p>`,
         }));
       }
       if (url.pathname === "/api/shares" && req.method === "GET") {

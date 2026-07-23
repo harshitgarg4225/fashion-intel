@@ -112,3 +112,39 @@ test("computeStreak counts journal photo-log days alongside worn looks", async (
   assert.equal(computeStreak(outfits, "2026-07-20", ["2026-07-20", "2026-07-18"]), 3, "journal days bridge and extend the streak");
   assert.equal(computeStreak([], "2026-07-20", ["2026-07-20"]), 1, "a journal-only day starts a streak");
 });
+
+test("referral bonus credits both sides exactly once, on the referred user's first render", async () => {
+  const { mkdtemp, readFile, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const { initTenancy, runAsUser, userDirFor } = await import("../scripts/tenant.mjs");
+  const { maybeGrantReferralBonus, generateRefCode, findUserByRefCode } = await import("../scripts/referrals.mjs");
+
+  const base = await mkdtemp(path.join(tmpdir(), "mira-ref-"));
+  initTenancy(base);
+  const users = {
+    alice: { id: "alice", credits: 25, refCode: "alice-code" },
+    bela: { id: "bela", credits: 25, referredBy: "alice" },
+  };
+  await writeFile(path.join(base, "users.json"), JSON.stringify(users));
+  const env = { MIRA_MULTI_TENANT: "true", MIRA_REFERRAL_BONUS: "10", MIRA_REFERRED_BONUS: "5" };
+
+  const grant = () => runAsUser({ id: "bela" }, userDirFor(base, "bela"), () => maybeGrantReferralBonus(env));
+  await grant();
+  let saved = JSON.parse(await readFile(path.join(base, "users.json"), "utf8"));
+  assert.equal(saved.alice.credits, 35, "referrer earns the bonus");
+  assert.equal(saved.alice.referralEarned, 10);
+  assert.equal(saved.bela.credits, 30, "referred user earns theirs");
+  assert.equal(saved.bela.refRewarded, true);
+
+  await grant();
+  saved = JSON.parse(await readFile(path.join(base, "users.json"), "utf8"));
+  assert.equal(saved.alice.credits, 35, "second render grants nothing");
+  assert.equal(saved.bela.credits, 30);
+
+  assert.equal(findUserByRefCode(saved, "alice-code").id, "alice");
+  assert.equal(findUserByRefCode(saved, "nope"), null);
+  const code = generateRefCode(saved);
+  assert.ok(code.length >= 8 && code !== "alice-code");
+  initTenancy(null);
+});

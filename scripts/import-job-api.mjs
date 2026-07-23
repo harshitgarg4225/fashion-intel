@@ -6,6 +6,7 @@ import { structuredAnalysis } from "./ai-providers.mjs";
 import { audit, checkImageBudget, initTelemetry, recordUsage } from "./telemetry.mjs";
 import { initSettingsStore, makeSetting, saveStoredSettings, storedKeyStatus, STORABLE_KEYS } from "./settings-store.mjs";
 import { checkRenderCredits, initTenancy, isMultiTenant, tenantDataDir, tenantStorage, userDirFor } from "./tenant.mjs";
+import { maybeGrantReferralBonus } from "./referrals.mjs";
 
 const API_ROOT = "/api/import/jobs";
 const ASSET_ROOT = "/api/import/assets";
@@ -360,10 +361,11 @@ async function geminiEdit({ key, baseUrl, model, prompt, images, size }) {
 // set WARDROBE_IMAGE_PROVIDER=gemini plus GEMINI_API_KEY to switch.
 export async function imageEdit({ setting, modelSetting, prompt, images, size, background }) {
   await checkRenderCredits();
+  let bytes;
   if (setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase() === "gemini") {
     const key = setting("GEMINI_API_KEY").trim();
     if (!key) throw new Error("GEMINI_API_KEY is not configured");
-    return geminiEdit({
+    bytes = await geminiEdit({
       key,
       baseUrl: setting("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, ""),
       model: setting("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
@@ -371,19 +373,27 @@ export async function imageEdit({ setting, modelSetting, prompt, images, size, b
       images,
       size,
     });
+  } else {
+    const key = setting("OPENAI_API_KEY").trim();
+    if (!key) throw new Error("OPENAI_API_KEY is not configured");
+    bytes = await openAIEdit({
+      key,
+      baseUrl: setting("OPENAI_API_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, ""),
+      model: setting(modelSetting, setting("OPENAI_IMAGE_MODEL", "gpt-image-2")),
+      quality: setting("OPENAI_IMAGE_QUALITY", "high"),
+      prompt,
+      images,
+      size,
+      background,
+    });
   }
-  const key = setting("OPENAI_API_KEY").trim();
-  if (!key) throw new Error("OPENAI_API_KEY is not configured");
-  return openAIEdit({
-    key,
-    baseUrl: setting("OPENAI_API_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, ""),
-    model: setting(modelSetting, setting("OPENAI_IMAGE_MODEL", "gpt-image-2")),
-    quality: setting("OPENAI_IMAGE_QUALITY", "high"),
-    prompt,
-    images,
-    size,
-    background,
-  });
+  // A successful render is the referral activation event.
+  void maybeGrantReferralBonus({
+    MIRA_MULTI_TENANT: setting("MIRA_MULTI_TENANT"),
+    MIRA_REFERRAL_BONUS: setting("MIRA_REFERRAL_BONUS"),
+    MIRA_REFERRED_BONUS: setting("MIRA_REFERRED_BONUS"),
+  }).catch(() => {});
+  return bytes;
 }
 
 // 16 hex chars of 8x8 luminance structure + 3 hex chars of quantized mean color.

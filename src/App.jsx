@@ -5,6 +5,16 @@ import { OptimizedImage } from "./OptimizedImage.jsx";
 import { OutfitStudio } from "./outfit-studio.jsx";
 import { Insights } from "./insights.jsx";
 import { Journal } from "./journal.jsx";
+import { deliverShare } from "./share-utils.js";
+
+// Referral attribution: share links land here with ?ref=<code>. Remember it in
+// a cookie so the Google sign-in roundtrip can credit the person who shared.
+const arrivedByInvite = (() => {
+  const ref = new URLSearchParams(window.location.search).get("ref");
+  if (!ref || !/^[A-Za-z0-9_-]{4,32}$/.test(ref)) return false;
+  document.cookie = `mira_ref=${ref}; path=/; max-age=${14 * 24 * 3600}; SameSite=Lax`;
+  return true;
+})();
 
 function AuthGate({ mode }) {
   if (mode === "google") {
@@ -13,6 +23,7 @@ function AuthGate({ mode }) {
         <div className="auth-card">
           <h1>Mira</h1>
           <p>Your AI clothing journal — get dressed by feeling, remember what you wore. Sign in to begin.</p>
+          {arrivedByInvite && <p className="auth-invite">You were invited by a friend — you'll both earn bonus render credits.</p>}
           <a className="google-signin" href="/auth/google">Continue with Google</a>
           <p className="auth-fineprint">Your photos and closet are private to your account.</p>
           <p className="auth-fineprint"><a href="/legal/terms">Terms</a> · <a href="/legal/privacy">Privacy</a> · <a href="/legal/refunds">Refunds</a> · <a href="/legal/contact">Contact</a></p>
@@ -29,6 +40,20 @@ function AccountChip() {
   const [shopOpen, setShopOpen] = useState(false);
   const [buying, setBuying] = useState(false);
   const [notice, setNotice] = useState("");
+  const [invited, setInvited] = useState(false);
+
+  const invite = async () => {
+    if (!me?.invitePath) return;
+    setNotice("");
+    const url = `${window.location.origin}${me.invitePath}`;
+    const delivery = await deliverShare({ title: "Join me on Mira — your AI clothing journal", url });
+    if (delivery.status === "shared" || delivery.status === "copied") {
+      setInvited(true);
+      setTimeout(() => setInvited(false), 2500);
+    } else if (delivery.status === "manual") {
+      setNotice(`Your invite link: ${url}`);
+    }
+  };
 
   const refreshMe = useCallback(() => {
     fetch("/api/me", { cache: "no-store" })
@@ -107,6 +132,9 @@ function AccountChip() {
       <div className="account-chip">
         <span>{me.name || me.email}</span>
         <span className="account-credits">{creditsLeft} renders left</span>
+        <button type="button" onClick={invite} title={`Friends who join from your link get +${me.referralBonuses?.referred ?? 5} renders on their first look — and you get +${me.referralBonuses?.referrer ?? 10}.`}>
+          {invited ? "Link copied" : "Invite friends"}
+        </button>
         <button type="button" onClick={openShop}>Add renders</button>
         <button
           type="button"
@@ -120,6 +148,12 @@ function AccountChip() {
         <button type="button" className="account-danger" onClick={deleteAccount}>Delete account</button>
       </div>
       {notice && <p className="account-notice" role="status">{notice}</p>}
+      {(me.referrals?.referredCount ?? 0) > 0 && (
+        <p className="account-notice">
+          {me.referrals.referredCount} friend{me.referrals.referredCount === 1 ? "" : "s"} joined from your invites
+          {me.referrals.referralEarned > 0 ? ` · +${me.referrals.referralEarned} renders earned` : ""}
+        </p>
+      )}
       {shopOpen && packs && (
         <div className="pack-row" role="group" aria-label="Credit packs">
           {packs.packs.map((pack) => (

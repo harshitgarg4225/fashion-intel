@@ -77,6 +77,8 @@ Legend: ✅ shipped · 🔜 next up · 🧭 explored / needs design
 ## 5. Sharing & multiplayer
 
 - ✅ Share a look: one-tap shareable card PNG (rendered photo + garment strip + look name) from every finished look
+- ✅ Referral loop (hosted mode): every share page CTA carries the sharer's invite code, "Invite friends" gives a personal link, signups are attributed, and both sides earn render credits when the invited user completes their first render (`MIRA_REFERRAL_BONUS` / `MIRA_REFERRED_BONUS`)
+- ✅ Share metrics: page views counted per share link (crawler og.png fetches excluded), shown via the share management API
 - 🔜 Ask-a-friend: send two candidate looks, friend taps a winner
 - 🧭 Household wardrobes: multiple people, one instance, strict per-person separation
 - 🧭 Community lookbooks: opt-in anonymous outfit inspiration from similar wardrobes

@@ -1763,3 +1763,12 @@ button { font: inherit; }
   }
   .masthead .view-switch button { white-space: nowrap; }
 }
+
+/* Referral: invited-by-a-friend note on the sign-in card */
+.auth-invite {
+  border: 1px solid var(--ink);
+  padding: 10px 14px;
+  font-size: 12px;
+  letter-spacing: .06em;
+  color: var(--ink);
+}

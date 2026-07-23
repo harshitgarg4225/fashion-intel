@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicJson } from "./import-job-api.mjs";
 import { isMultiTenant, runAsUser, userDirFor } from "./tenant.mjs";
+import { findUserByRefCode, generateRefCode, referralBonuses, referralSummary } from "./referrals.mjs";
 
 // Google SSO + per-user gating for multi-tenant mode. Inactive unless
 // MIRA_MULTI_TENANT=true. Requires GOOGLE_CLIENT_ID/SECRET (web OAuth
@@ -39,6 +40,15 @@ export function ssoApi(options = {}) {
       const given = Buffer.from(signature);
       if (expected.length === given.length && timingSafeEqual(expected, given)) return userId;
       return null;
+    }
+    return null;
+  }
+
+  function refCookie(req) {
+    const header = req.headers.cookie || "";
+    for (const part of header.split(";")) {
+      const [name, ...rest] = part.trim().split("=");
+      if (name === "mira_ref") return decodeURIComponent(rest.join("=")).slice(0, 32);
     }
     return null;
   }
@@ -100,7 +110,9 @@ export function ssoApi(options = {}) {
       const userId = userIdFor(info.email);
       const users = await loadUsers();
       const now = new Date().toISOString();
+      const isNewUser = !users[userId];
       users[userId] = {
+        ...users[userId],
         id: userId,
         email: info.email.trim().toLowerCase(),
         name: typeof info.name === "string" ? info.name.slice(0, 120) : "",
@@ -109,10 +121,22 @@ export function ssoApi(options = {}) {
         createdAt: users[userId]?.createdAt || now,
         lastLoginAt: now,
       };
+      // Referral attribution: a share page set the mira_ref cookie; a brand-new
+      // account records who invited them. Self-referrals are ignored.
+      if (isNewUser) {
+        const referrer = findUserByRefCode(users, refCookie(req));
+        if (referrer && referrer.id !== userId) {
+          users[userId].referredBy = referrer.id;
+          users[userId].referredAt = now;
+        }
+      }
       await atomicJson(usersFile, users);
       await mkdir(userDirFor(baseDir, userId), { recursive: true });
       const secure = (req.headers["x-forwarded-proto"] || "").includes("https") ? "; Secure" : "";
-      res.setHeader("Set-Cookie", `${COOKIE}=${userId}.${sign(userId)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${30 * 24 * 3600}${secure}`);
+      res.setHeader("Set-Cookie", [
+        `${COOKIE}=${userId}.${sign(userId)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${30 * 24 * 3600}${secure}`,
+        `mira_ref=; SameSite=Lax; Path=/; Max-Age=0`,
+      ]);
       res.statusCode = 302;
       res.setHeader("Location", "/");
       return res.end();
@@ -163,7 +187,19 @@ export function ssoApi(options = {}) {
         const usage = JSON.parse(await readFile(path.join(userDirFor(baseDir, userId), "usage.json"), "utf8"));
         rendersUsed = Number(usage.totalImageCalls) || 0;
       } catch {}
-      return json(res, 200, { id: user.id, email: user.email, name: user.name, picture: user.picture, credits: user.credits, rendersUsed });
+      // Mint the invite code on first request so the invite link is always ready.
+      if (!user.refCode) {
+        user.refCode = generateRefCode(users);
+        await atomicJson(usersFile, users);
+      }
+      const referrals = await referralSummary(userId);
+      return json(res, 200, {
+        id: user.id, email: user.email, name: user.name, picture: user.picture,
+        credits: user.credits, rendersUsed,
+        invitePath: `/?ref=${user.refCode}`,
+        referrals,
+        referralBonuses: referralBonuses(options.env),
+      });
     }
 
     const userDir = userDirFor(baseDir, userId);
