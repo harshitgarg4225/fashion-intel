@@ -8,6 +8,7 @@ export const STORABLE_KEYS = new Set([
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "GEMINI_API_KEY",
+  "FAL_API_KEY",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
 ]);

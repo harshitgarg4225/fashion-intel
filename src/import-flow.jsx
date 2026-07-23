@@ -107,6 +107,7 @@ const KEY_FIELDS = [
   ["OPENAI_API_KEY", "OpenAI API key", "required for gpt-image rendering (and the default stylist)"],
   ["ANTHROPIC_API_KEY", "Anthropic API key", "optional — run the stylist on Claude"],
   ["GEMINI_API_KEY", "Gemini API key", "optional — alternative image renderer (WARDROBE_IMAGE_PROVIDER=gemini)"],
+  ["FAL_API_KEY", "fal.ai API key", "optional — cheapest renderer: Seedream/Qwen edit models (WARDROBE_IMAGE_PROVIDER=fal)"],
   ["GOOGLE_CLIENT_ID", "Google OAuth client ID", "optional — Google Photos import"],
   ["GOOGLE_CLIENT_SECRET", "Google OAuth client secret", "optional — Google Photos import"],
 ];

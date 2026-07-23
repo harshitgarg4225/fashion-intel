@@ -357,12 +357,60 @@ async function geminiEdit({ key, baseUrl, model, prompt, images, size }) {
   return Buffer.from(encoded, "base64");
 }
 
+// fal.ai hosts open-weight editing models (ByteDance Seedream, Qwen-Image-Edit)
+// on US infrastructure — the cheapest render path (~$0.02-0.04/image) without
+// sending user photos to China-region APIs. FAL_IMAGE_MODEL picks the model.
+async function falEdit({ key, baseUrl, model, prompt, images, size }) {
+  const imageUrls = [];
+  for (const image of images) {
+    const normalized = await normalizeImage(image.data);
+    imageUrls.push(`data:image/png;base64,${normalized.toString("base64")}`);
+  }
+  const [width, height] = (size || "1024x1024").split("x").map(Number);
+  const response = await fetch(`${baseUrl}/${model}`, {
+    method: "POST",
+    headers: { Authorization: `Key ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      image_urls: imageUrls,
+      image_size: { width: width || 1024, height: height || 1024 },
+      num_images: 1,
+    }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.detail?.[0]?.msg || result.detail || result.error || `fal image request failed (${response.status})`);
+  const url = result.images?.[0]?.url;
+  if (!url) throw new Error("fal response did not contain image data");
+  let bytes;
+  if (url.startsWith("data:")) {
+    bytes = Buffer.from(url.slice(url.indexOf(",") + 1), "base64");
+  } else {
+    const download = await fetch(url);
+    if (!download.ok) throw new Error(`fal image download failed (${download.status})`);
+    bytes = Buffer.from(await download.arrayBuffer());
+  }
+  void audit({ type: "image", provider: "fal", model, size });
+  void recordUsage("image", "fal");
+  return bytes;
+}
+
 // Dispatches to the configured image provider. gpt-image is the default;
-// set WARDROBE_IMAGE_PROVIDER=gemini plus GEMINI_API_KEY to switch.
+// WARDROBE_IMAGE_PROVIDER=gemini (GEMINI_API_KEY) or =fal (FAL_API_KEY) switch.
 export async function imageEdit({ setting, modelSetting, prompt, images, size, background }) {
   await checkRenderCredits();
   let bytes;
-  if (setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase() === "gemini") {
+  if (setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase() === "fal") {
+    const key = setting("FAL_API_KEY").trim();
+    if (!key) throw new Error("FAL_API_KEY is not configured");
+    bytes = await falEdit({
+      key,
+      baseUrl: setting("FAL_API_BASE_URL", "https://fal.run").replace(/\/$/, ""),
+      model: setting("FAL_IMAGE_MODEL", "fal-ai/bytedance/seedream/v4/edit").replace(/^\//, ""),
+      prompt,
+      images,
+      size,
+    });
+  } else if (setting("WARDROBE_IMAGE_PROVIDER", "openai").toLowerCase() === "gemini") {
     const key = setting("GEMINI_API_KEY").trim();
     if (!key) throw new Error("GEMINI_API_KEY is not configured");
     bytes = await geminiEdit({

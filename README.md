@@ -96,7 +96,8 @@ Every generation step is reviewable: approve, reject, or regenerate with a corre
 | `WARDROBE_DAILY_BUDGET` | off | Hard-stop image generation past this estimated daily spend (USD) |
 | `WARDROBE_VISUAL_STYLIST` | `auto` | Send garment thumbnails to the stylist: `auto` (≤20 pieces), `on`, `off` |
 | `WARDROBE_PASSPHRASE` | off | Gates every /api route behind a login; required for public deploys |
-| `WARDROBE_IMAGE_PROVIDER` | `openai` | `gemini` renders all images with Gemini (`GEMINI_API_KEY`) |
+| `WARDROBE_IMAGE_PROVIDER` | `openai` | `gemini` (Gemini) or `fal` (Seedream/Qwen via fal.ai, cheapest) render all images |
+| `FAL_IMAGE_MODEL` | `fal-ai/bytedance/seedream/v4/edit` | Which fal-hosted edit model renders (`FAL_API_KEY`) |
 | `WARDROBE_HEMISPHERE` | `north` | Season logic for the stylist and capsule planner |
 | `WARDROBE_ABOUT_URL` | this repo | Where the "Get dressed by Mira" button on share pages points |
 

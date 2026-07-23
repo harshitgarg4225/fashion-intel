@@ -6,7 +6,7 @@ import { tenantDataDir } from "./tenant.mjs";
 // Gemini Flash renders and analysis are far cheaper than gpt-image/GPT vision;
 // a provider-blind estimate would trip WARDROBE_DAILY_BUDGET ~4x too early.
 const EST_COST = {
-  image: { openai: 0.17, gemini: 0.04 },
+  image: { openai: 0.17, gemini: 0.04, fal: 0.03 },
   vision: { openai: 0.01, anthropic: 0.01, gemini: 0.002 },
 };
 

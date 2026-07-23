@@ -9,6 +9,7 @@ Mira runs as a single Node service (Vite build + `vite preview` serving the app 
 | **OpenAI** (required) | gpt-image rendering: cutouts, modeled photos, outfit renders; default detection + stylist | [platform.openai.com](https://platform.openai.com/api-keys) → create an API key |
 | **Anthropic** (optional) | Runs garment detection + outfit curation on Claude | [console.anthropic.com](https://console.anthropic.com/) → API keys |
 | **Google Gemini** (optional) | Alternative image renderer (`WARDROBE_IMAGE_PROVIDER=gemini`) | [aistudio.google.com](https://aistudio.google.com/apikey) → API key |
+| **fal.ai** (optional) | Cheapest renderer (~$0.03): open-weight Seedream/Qwen edit models on US infra (`WARDROBE_IMAGE_PROVIDER=fal`) | [fal.ai](https://fal.ai/dashboard/keys) → API key |
 | **Google Photos** (optional) | Import photos straight from Google Photos | [console.cloud.google.com](https://console.cloud.google.com/): create a project → enable the **Photos Picker API** → OAuth consent screen (External, add yourself as test user) → Credentials → OAuth client, type **Web application**, authorized redirect URI `https://YOUR-APP.up.railway.app/api/google/callback` |
 | Open-Meteo (weather) | "Use my weather" | Nothing — no key needed |
 
@@ -25,6 +26,10 @@ WARDROBE_STYLIST_PROVIDER=gemini    # optional; auto-selected when Gemini is the
 ```
 
 **Privacy requirement**: create the API key on a GCP project **with billing enabled** (paid tier — your credits absorb the cost). Do NOT serve real users on the AI Studio free tier: its terms allow Google to use submitted content to improve their products, which would contradict the privacy policy this app ships (`/legal/privacy`). Free tier is fine for your own development only.
+
+### Cheapest renders (fal.ai — Seedream / Qwen)
+
+`WARDROBE_IMAGE_PROVIDER=fal` + `FAL_API_KEY` switches rendering to open-weight Chinese editing models served from US infrastructure via fal.ai — roughly the cheapest per-render path (~$0.02–0.04 vs ~$0.17 for gpt-image). `FAL_IMAGE_MODEL` picks the model (default `fal-ai/bytedance/seedream/v4/edit`; `fal-ai/qwen-image-edit-plus` is the Qwen alternative). Mix per role: the stylist can stay on Gemini (`WARDROBE_STYLIST_PROVIDER=gemini`) while fal renders. **Quality gate before committing**: identity preservation is the product — generate a few looks of yourself on each provider and pick with your eyes, not the price sheet. Note fal is pay-as-you-go (GCP credits don't cover it), so on a credits-funded launch Gemini is effectively $0 while fal costs real cash.
 
 ## 2. Create the Railway service
 

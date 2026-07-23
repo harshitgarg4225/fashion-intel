@@ -63,7 +63,7 @@ export function legalApi(options = {}) {
       <h2>How it is used</h2>
       <p>Solely to run the Service for you: detecting garments, styling outfits, rendering images, and showing your closet, insights, and journal. We do not sell your data or use it for advertising. Nothing is public unless you explicitly create a share link, which you can revoke anytime.</p>
       <h2>Processors</h2>
-      <p>To operate, your images and wardrobe metadata are sent to the AI providers configured by the operator (OpenAI and/or Anthropic and/or Google) strictly to perform the requested generation; payments are processed by Razorpay; sign-in and optional photo import use Google. Each processes data under its own terms.</p>
+      <p>To operate, your images and wardrobe metadata are sent to the AI providers configured by the operator (one or more of OpenAI, Anthropic, Google, and fal.ai) strictly to perform the requested generation; payments are processed by Razorpay; sign-in and optional photo import use Google. Each processes data under its own terms.</p>
       <h2>Storage and retention</h2>
       <p>Your closet is stored in an isolated per-account directory on the operator's server and kept until you delete it. Session cookies are strictly functional. An audit log of AI calls is kept for cost and abuse control.</p>
       <h2>Your rights</h2>
