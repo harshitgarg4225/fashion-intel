@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowCounterClockwise, Check, FolderOpen, GoogleLogo, Plus, SpinnerGap, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { IMAGE_ACCEPT, prepareImageFile } from "./image-input.js";
 import "./import-flow.css";
 
 const API = "/api/import/jobs";
@@ -14,13 +15,6 @@ const PARTS = [
   ["shoes", "Shoes"],
 ];
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
-
-const fileToDataUrl = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(reader.result);
-  reader.onerror = () => reject(reader.error || new Error("Could not read that image."));
-  reader.readAsDataURL(file);
-});
 
 async function api(path, options) {
   const response = await fetch(path, {
@@ -239,12 +233,22 @@ function ReferenceCapture({ setup, onDone }) {
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept={IMAGE_ACCEPT}
           hidden
           onChange={async (event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
-            if (file?.type.startsWith("image/")) submit(await fileToDataUrl(file));
+            if (!file) return;
+            setBusy(true);
+            setError("");
+            try {
+              const dataUrl = await prepareImageFile(file);
+              setBusy(false);
+              await submit(dataUrl);
+            } catch (readError) {
+              setError(readError.message);
+              setBusy(false);
+            }
           }}
         />
       </div>
@@ -433,12 +437,14 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved, empha
 
   const submitFiles = useCallback(async (files) => {
     if (!setup?.ready) { setOpen(true); return; }
-    const images = [...files].filter((file) => file.type.startsWith("image/"));
+    // Do not pre-filter on MIME type: Chrome reports an empty type for HEIC,
+    // and dropping those silently made picking a photo look like a no-op.
+    const images = [...files];
     if (!images.length) return;
     setDragging(false); setError(""); setNotice(null);
     for (const file of images) {
       try {
-        const imageDataUrl = await fileToDataUrl(file);
+        const imageDataUrl = await prepareImageFile(file);
         const result = await api(API, { method: "POST", body: JSON.stringify({ imageDataUrl, metadata: { name: file.name.replace(/\.[^.]+$/, "") } }) });
         const createdJobs = result.jobs || [result];
         if (!createdJobs.length && result.noClothingDetected) {
@@ -458,7 +464,7 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved, empha
     const onDragOver = (event) => { if ([...event.dataTransfer.types].includes("Files")) event.preventDefault(); };
     const onDragLeave = (event) => { event.preventDefault(); depth = Math.max(0, depth - 1); if (!depth) setDragging(false); };
     const onDrop = (event) => { event.preventDefault(); depth = 0; setDragging(false); submitFiles(event.dataTransfer.files); };
-    const onPaste = (event) => { const files = [...event.clipboardData.files]; if (files.some((file) => file.type.startsWith("image/"))) { event.preventDefault(); submitFiles(files); } };
+    const onPaste = (event) => { const files = [...event.clipboardData.files]; if (files.length) { event.preventDefault(); submitFiles(files); } };
     window.addEventListener("dragenter", onDragEnter); window.addEventListener("dragover", onDragOver); window.addEventListener("dragleave", onDragLeave); window.addEventListener("drop", onDrop); window.addEventListener("paste", onPaste);
     return () => { window.removeEventListener("dragenter", onDragEnter); window.removeEventListener("dragover", onDragOver); window.removeEventListener("dragleave", onDragLeave); window.removeEventListener("drop", onDrop); window.removeEventListener("paste", onPaste); };
   }, [submitFiles]);
@@ -528,7 +534,7 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved, empha
 
   return (
     <>
-      <input ref={inputRef} type="file" accept="image/*" multiple hidden disabled={!setup?.ready} onChange={(event) => { submitFiles(event.target.files); event.target.value = ""; }} />
+      <input ref={inputRef} type="file" accept={IMAGE_ACCEPT} multiple hidden disabled={!setup?.ready} onChange={(event) => { submitFiles(event.target.files); event.target.value = ""; }} />
       <div className="import-drop-overlay" data-active={dragging && !setupRequired} aria-hidden={!dragging || setupRequired}><div className="import-drop-target is-over"><UploadSimple size={34} weight="light" /><h2>Drop clothing images</h2><p>A single garment or a photo of a full outfit works. Your wardrobe stays exactly where you left it.</p></div></div>
       <aside className={`import-tray${hasImportActivity ? " is-expanded" : ""}${emphasize ? " is-emphasized" : ""}`} aria-label="Wardrobe imports">
         <button className="import-tray__button" type="button" onClick={() => setupRequired || hasImportActivity ? setOpen(true) : inputRef.current?.click()} aria-label={setupRequired ? "Open setup instructions" : hasImportActivity ? "Open import progress" : "Add clothes"}>{activeStatus?.tone === "processing" ? <SpinnerGap size={19} className="import-spinner" /> : activeStatus?.tone === "error" ? <WarningCircle size={19} /> : readyCount ? <span>{readyCount}</span> : notice ? <X size={18} /> : <Plus size={19} />}</button>

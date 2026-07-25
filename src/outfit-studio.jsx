@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowCounterClockwise, ArrowsClockwise, CloudSun, CoatHanger, Heart, ImageSquare, Sparkle, SpinnerGap, ThumbsDown, ThumbsUp, Trash, WarningCircle, X } from "@phosphor-icons/react";
 import { OptimizedImage } from "./OptimizedImage.jsx";
 import { deliverShare } from "./share-utils.js";
+import { IMAGE_ACCEPT, prepareImageFile } from "./image-input.js";
 import "./outfit-studio.css";
 
 const API = "/api/outfits";
@@ -63,13 +64,6 @@ function getLocalWeather() {
     );
   });
 }
-
-const fileToDataUrl = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(reader.result);
-  reader.onerror = () => reject(reader.error || new Error("Could not read that image."));
-  reader.readAsDataURL(file);
-});
 
 function statusCopy(outfit) {
   if (outfit.status === "curating") return "Styling the combination";
@@ -310,9 +304,9 @@ export function OutfitStudio({ items, initialMood = null }) {
   const pickInspiration = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
     try {
-      setInspiration({ name: file.name, dataUrl: await fileToDataUrl(file) });
+      setInspiration({ name: file.name, dataUrl: await prepareImageFile(file) });
     } catch (readError) {
       setError(readError.message);
     }
@@ -480,7 +474,7 @@ export function OutfitStudio({ items, initialMood = null }) {
             {inspiration ? <X size={15} aria-hidden="true" /> : <ImageSquare size={15} aria-hidden="true" />}
             {inspiration ? `Inspired by ${inspiration.name.slice(0, 18)}` : "Inspiration photo"}
           </button>
-          <input ref={inspirationInputRef} type="file" accept="image/*" hidden onChange={pickInspiration} />
+          <input ref={inspirationInputRef} type="file" accept={IMAGE_ACCEPT} hidden onChange={pickInspiration} />
           <button type="button" className="outfit-create" onClick={() => createLook()} disabled={creating || (config && !config.ready)}>
             {creating ? <SpinnerGap className="spin" size={15} aria-hidden="true" /> : <Sparkle size={15} aria-hidden="true" />}
             {chosenMood ? `Dress me ${customMood.trim() ? "for that" : chosenMood}` : "Surprise me"}

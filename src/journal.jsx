@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CaretLeft, CaretRight, DownloadSimple, Plus, ShareNetwork, X } from "@phosphor-icons/react";
 import { OptimizedImage } from "./OptimizedImage.jsx";
 import { deliverShare } from "./share-utils.js";
+import { IMAGE_ACCEPT, prepareImageFile } from "./image-input.js";
 import "./journal.css";
 
 const LOG_FEELINGS = ["confident", "effortless", "cozy", "bold", "romantic", "casual"];
@@ -17,13 +18,6 @@ function prettyDay(date) {
   return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
 
-const fileToDataUrl = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(reader.result);
-  reader.onerror = () => reject(reader.error || new Error("Could not read that photo."));
-  reader.readAsDataURL(file);
-});
-
 function JournalLogger({ date, today, onClose, onSaved }) {
   const [photo, setPhoto] = useState(null);
   const [note, setNote] = useState("");
@@ -35,10 +29,10 @@ function JournalLogger({ date, today, onClose, onSaved }) {
   const pickPhoto = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
     setError("");
     try {
-      setPhoto({ name: file.name, dataUrl: await fileToDataUrl(file) });
+      setPhoto({ name: file.name, dataUrl: await prepareImageFile(file) });
     } catch (readError) {
       setError(readError.message);
     }
@@ -78,7 +72,7 @@ function JournalLogger({ date, today, onClose, onSaved }) {
         <button type="button" className={`journal-photo-pick${photo ? " has-photo" : ""}`} onClick={() => fileRef.current?.click()}>
           {photo ? <img src={photo.dataUrl} alt="Your outfit today" /> : <span><Plus size={18} aria-hidden="true" /> Add a photo</span>}
         </button>
-        <input ref={fileRef} type="file" accept="image/*" hidden onChange={pickPhoto} />
+        <input ref={fileRef} type="file" accept={IMAGE_ACCEPT} hidden onChange={pickPhoto} />
         <div className="journal-logger-fields">
           <input
             value={note}
