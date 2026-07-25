@@ -22,6 +22,8 @@ Your AI clothing journal.
 
 Everything stays local: originals, cutouts, renders, outfits, and the JSON database live in `data/` on your machine. See [ROADMAP.md](ROADMAP.md) for the full product plan.
 
+> **Building on this codebase (human or AI)?** Start with **[AGENTS.md](AGENTS.md)** — architecture, tenancy rules, provider swapping, the testing pattern, and the traps that have already cost debugging time.
+
 ## Host it for others (multi-tenant)
 
 Flip `MIRA_MULTI_TENANT=true` (plus `MIRA_SESSION_SECRET` and your Google OAuth client) and the same deployment becomes a hosted product: **Continue with Google** sign-in, a fully private closet per account, operator-held API keys, and per-user render credits — plus a built-in **referral loop**: share pages carry the sharer's invite code, signups are attributed, and both sides earn bonus renders when the invited friend generates their first look. Details in [DEPLOY.md](DEPLOY.md).
